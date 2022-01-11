@@ -1,0 +1,36 @@
+{
+    "trueskill": {
+        "mu": 4000,
+        "sigma": 1000,
+        "beta": 500,
+        "tau": 50
+    },
+    "lobbies": [
+        {
+            "channel": 739093044346748948,
+            "webhook": {
+                "id": 0,
+                "token": ""
+            },
+            "capacity": 8
+        },
+        {
+            "channel": 859413363062341633,
+            "webhook": {
+                "id": 0,
+                "token": ""
+            },
+            "capacity": 6
+        }
+    ],
+    "roles": {
+        "ranked": 809594814378016818,
+        "banned": 767361667159031820,
+        "admin": 731288359120404562
+    },
+    "infos": [
+        731269742870003764
+    ],
+    "database": "./db.db",
+    "timeout": 90
+}

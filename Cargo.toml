@@ -1,0 +1,17 @@
+[package]
+name = "ranked_bot_v2"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chrono = { version = "0.4", default-features = false }
+harmony = { git = "https://github.com/lfenart/harmony", rev = "3873dcd", default-features = false, features = ["rustls"] }
+itertools = { version = "0.10", default-features = false, features = ["use_alloc"] }
+parking_lot = { version = "0.11", default-features = false }
+rusqlite = { version = "0.26", default-features = false, features = ["bundled"] }
+serde = { version = "1.0", default-features = false }
+serde_json = { version = "1.0", default-features = false }
+serde_repr = { version = "0.1", default-features = false }
+trueskill = { git = "https://github.com/lfenart/trueskill", rev = "4915435", default-features = false, features = ["serde"] }
