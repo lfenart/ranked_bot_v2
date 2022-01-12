@@ -7,6 +7,7 @@ pub struct Config {
     pub lobbies: Vec<Lobby>,
     pub infos: Vec<u64>,
     pub roles: Roles,
+    pub ranks: Vec<Rank>,
     pub database: String,
     pub timeout: i64,
 }
@@ -23,6 +24,13 @@ pub struct Roles {
     pub ranked: u64,
     pub admin: u64,
     pub banned: u64,
+}
+
+#[derive(Deserialize)]
+pub struct Rank {
+    pub name: String,
+    pub limit: f64,
+    pub color: String,
 }
 
 #[derive(Deserialize)]

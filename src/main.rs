@@ -21,7 +21,7 @@ use harmony::model::Message;
 use parking_lot::RwLock;
 use trueskill::SimpleTrueSkill;
 
-use config::{Config, Roles};
+use config::{Config, Rank, Roles};
 pub use error::Error;
 use model::{Database, Lobbies, Lobby, Ratings};
 
@@ -80,6 +80,7 @@ fn message_create(
     ctx: Context,
     msg: Message,
     roles: &Roles,
+    ranks: &[Rank],
     lobbies: Arc<RwLock<Lobbies>>,
     trueskill: &mut SimpleTrueSkill,
     database: &Database,
@@ -167,6 +168,25 @@ fn message_create(
                 "swap" => commands::swap(&ctx, &msg, roles, &lobbies.read(), database, &args),
                 "info" => commands::info(&ctx, &msg, &lobbies.read(), &args),
                 "forceinfo" => commands::forceinfo(&ctx, &msg, roles, &lobbies.read(), &args),
+                "history" => commands::history(
+                    &ctx,
+                    &msg,
+                    ranks,
+                    &lobbies.read(),
+                    database,
+                    *trueskill,
+                    &args,
+                ),
+                "forcehistory" => commands::forcehistory(
+                    &ctx,
+                    &msg,
+                    roles,
+                    ranks,
+                    &lobbies.read(),
+                    database,
+                    *trueskill,
+                    &args,
+                ),
                 _ => return,
             };
             if let Err(err) = result {
@@ -211,6 +231,7 @@ fn main() {
         Arc::new(RwLock::new(lobbies))
     };
     let roles = config.roles;
+    let ranks = config.ranks;
     let client = ClientBuilder::new()
         .with_bot_token(&token)
         .intents(Intents::GUILD_MESSAGES | Intents::DIRECT_MESSAGES)
@@ -220,6 +241,7 @@ fn main() {
                 ctx,
                 msg,
                 &roles,
+                &ranks,
                 lobbies.clone(),
                 &mut trueskill,
                 &database,

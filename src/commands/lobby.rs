@@ -241,7 +241,7 @@ fn start_game(
                 lobbies[&channel_id]
                     .ratings()
                     .get(&x)
-                    .map(|x| x.rating())
+                    .map(|x| x.rating)
                     .unwrap_or_else(|| trueskill.create_rating()),
             )
         })
@@ -393,7 +393,7 @@ pub fn score(
     for (&user_id, player_info) in lobby.ratings().iter() {
         if let Some(member) = ctx.member(guild_id, user_id)? {
             if member.roles.contains(&roles.ranked.into()) {
-                ratings.push((user_id, player_info.rating()));
+                ratings.push((user_id, player_info.rating));
             }
         }
     }
@@ -517,7 +517,7 @@ pub fn undo(
     for (&user_id, player_info) in lobby.ratings().iter() {
         if let Some(member) = ctx.member(guild_id, user_id)? {
             if member.roles.contains(&roles.ranked.into()) {
-                ratings.push((user_id, player_info.rating()));
+                ratings.push((user_id, player_info.rating));
             }
         }
     }
@@ -668,7 +668,7 @@ pub fn rebalance(
                 lobby
                     .ratings()
                     .get(&(*x).into())
-                    .map(|x| x.rating())
+                    .map(|x| x.rating)
                     .unwrap_or_else(|| trueskill.create_rating()),
             )
         })

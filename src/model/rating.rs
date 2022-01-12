@@ -93,35 +93,19 @@ impl DerefMut for Ratings {
 
 #[derive(Debug, Clone, Copy)]
 pub struct PlayerInfo {
-    rating: Rating,
-    wins: usize,
-    losses: usize,
-    draws: usize,
+    pub rating: Rating,
+    pub wins: usize,
+    pub losses: usize,
+    pub draws: usize,
 }
 
 impl PlayerInfo {
-    fn new(rating: Rating) -> Self {
+    pub fn new(rating: Rating) -> Self {
         Self {
             rating,
             wins: 0,
             losses: 0,
             draws: 0,
         }
-    }
-
-    pub fn rating(&self) -> Rating {
-        self.rating
-    }
-
-    pub fn wins(&self) -> usize {
-        self.wins
-    }
-
-    pub fn losses(&self) -> usize {
-        self.losses
-    }
-
-    pub fn draws(&self) -> usize {
-        self.draws
     }
 }
