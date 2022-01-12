@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use harmony::client::Context;
@@ -342,6 +342,7 @@ pub fn score(
     lobbies: &mut Lobbies,
     trueskill: SimpleTrueSkill,
     database: &Database,
+    initial_ratings: &HashMap<u64, f64>,
     args: &[String],
 ) -> Result {
     if !checks::check_admin(ctx, msg, roles)? {
@@ -380,7 +381,7 @@ pub fn score(
         .get_games()?
         .remove(&msg.channel_id.0)
         .unwrap_or_default();
-    let ratings = Ratings::from_games(&games, trueskill);
+    let ratings = Ratings::from_games(&games, initial_ratings, trueskill);
     lobby.set_ratings(ratings);
     let mut ratings = Vec::new();
     for (&user_id, player_info) in lobby.ratings().iter() {
@@ -467,6 +468,7 @@ pub fn undo(
     lobbies: &mut Lobbies,
     database: &Database,
     trueskill: SimpleTrueSkill,
+    initial_ratings: &HashMap<u64, f64>,
     args: &[String],
 ) -> Result {
     if !checks::check_admin(ctx, msg, roles)? {
@@ -497,7 +499,7 @@ pub fn undo(
         .get_games()?
         .remove(&msg.channel_id.0)
         .unwrap_or_default();
-    let ratings = Ratings::from_games(&games, trueskill);
+    let ratings = Ratings::from_games(&games, initial_ratings, trueskill);
     lobby.set_ratings(ratings);
     ctx.send_message(msg.channel_id, |m| {
         m.embed(|e| e.description("Game updated"))

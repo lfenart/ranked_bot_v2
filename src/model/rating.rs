@@ -10,7 +10,11 @@ use super::{Game, Score};
 pub struct Ratings(HashMap<UserId, PlayerInfo>);
 
 impl Ratings {
-    pub fn from_games(games: &BTreeMap<usize, Game>, trueskill: SimpleTrueSkill) -> Self {
+    pub fn from_games(
+        games: &BTreeMap<usize, Game>,
+        initial: &HashMap<u64, f64>,
+        trueskill: SimpleTrueSkill,
+    ) -> Self {
         let mut ratings = HashMap::new();
         let default_rating = trueskill.create_rating();
         let default_info = PlayerInfo::new(default_rating);
@@ -28,16 +32,25 @@ impl Ratings {
                     ratings
                         .get(&x.into())
                         .map(|x: &PlayerInfo| x.rating)
-                        .unwrap_or(default_rating)
+                        .unwrap_or_else(|| {
+                            if let Some(&rating) = initial.get(&x) {
+                                Rating::new(rating, default_rating.variance())
+                            } else {
+                                default_rating
+                            }
+                        })
                 })
                 .collect::<Vec<_>>();
             let mut team2_ratings = teams[1]
                 .iter()
                 .map(|&x| {
-                    ratings
-                        .get(&x.into())
-                        .map(|x| x.rating)
-                        .unwrap_or(default_rating)
+                    ratings.get(&x.into()).map(|x| x.rating).unwrap_or_else(|| {
+                        if let Some(&rating) = initial.get(&x) {
+                            Rating::new(rating, default_rating.variance())
+                        } else {
+                            default_rating
+                        }
+                    })
                 })
                 .collect::<Vec<_>>();
             trueskill.update(&mut team1_ratings, &mut team2_ratings, score);

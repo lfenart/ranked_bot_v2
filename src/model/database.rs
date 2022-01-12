@@ -69,4 +69,12 @@ impl Database {
             Ok(serde_json::from_str(&row.get::<_, String>(0)?).unwrap())
         })
     }
+
+    pub fn get_initial_ratings(&self) -> rusqlite::Result<HashMap<u64, f64>> {
+        let mut stmt = self
+            .connection
+            .prepare("SELECT player, rating FROM initial;")?;
+        let intials_raw = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        intials_raw.collect()
+    }
 }

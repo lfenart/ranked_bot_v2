@@ -5,6 +5,7 @@ mod error;
 mod model;
 mod utils;
 
+use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -82,6 +83,7 @@ fn message_create(
     lobbies: Arc<RwLock<Lobbies>>,
     trueskill: &mut SimpleTrueSkill,
     database: &Database,
+    initial_ratings: &HashMap<u64, f64>,
 ) {
     if let Some(content) = msg.content.strip_prefix('!') {
         if let Some((command, args)) = parse_command(content) {
@@ -135,6 +137,7 @@ fn message_create(
                     &mut lobbies.write(),
                     *trueskill,
                     database,
+                    initial_ratings,
                     &args,
                 ),
                 "cancel" => commands::cancel(&ctx, &msg, roles, &lobbies.read(), database, &args),
@@ -145,6 +148,7 @@ fn message_create(
                     &mut lobbies.write(),
                     database,
                     *trueskill,
+                    initial_ratings,
                     &args,
                 ),
                 "gamelist" | "gl" => commands::gamelist(&ctx, &msg, &lobbies.read(), database),
@@ -188,12 +192,14 @@ fn main() {
     let config = read_config("config.json");
     let database = Database::open(config.database).expect("Could not open database");
     let mut games = database.get_games().unwrap();
+    let initials = database.get_initial_ratings().unwrap();
     let mut trueskill = config.trueskill;
     let lobbies = {
         let mut lobbies = Lobbies::default();
         for conf_lobby in config.lobbies {
             let ratings = Ratings::from_games(
                 &games.remove(&conf_lobby.channel).unwrap_or_default(),
+                &initials,
                 trueskill,
             );
             let mut lobby = Lobby::new(conf_lobby.capacity, ratings);
@@ -210,7 +216,15 @@ fn main() {
         .intents(Intents::GUILD_MESSAGES | Intents::DIRECT_MESSAGES)
         .on_ready(|ctx, rdy| ready(ctx, rdy, lobbies.clone(), config.timeout))
         .on_message_create(|ctx, msg| {
-            message_create(ctx, msg, &roles, lobbies.clone(), &mut trueskill, &database)
+            message_create(
+                ctx,
+                msg,
+                &roles,
+                lobbies.clone(),
+                &mut trueskill,
+                &database,
+                &initials,
+            )
         })
         .build();
     if let Err(err) = client.run() {
