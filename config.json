@@ -32,5 +32,32 @@
         731269742870003764
     ],
     "database": "./db.db",
-    "timeout": 90
+    "timeout": 90,
+    "ranks": [
+        {
+            "name": "bronze",
+            "limit": 2500,
+            "color": "peru"
+        },
+        {
+            "name": "silver",
+            "limit": 3500,
+            "color": "silver"
+        },
+        {
+            "name": "gold",
+            "limit": 4500,
+            "color": "gold"
+        },
+        {
+            "name": "diamond",
+            "limit": 5500,
+            "color": "blue"
+        },
+        {
+            "name": "master",
+            "limit": 800,
+            "color": "red"
+        }
+    ]
 }
