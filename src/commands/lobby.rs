@@ -247,6 +247,7 @@ fn start_game(
         })
         .collect::<Vec<_>>();
     let teams = utils::balance(&players);
+    let quality = utils::quality(&teams, trueskill);
     let mut game = Game::create(
         teams[0].iter().map(|x| x.0.into()).collect(),
         teams[1].iter().map(|x| x.0.into()).collect(),
@@ -261,7 +262,12 @@ fn start_game(
             .join("\n")
     };
     let title = format!("Game {} started", game.id());
-    let description = format!("Team 1:\n{}\n\nTeam 2:\n{}", f(&teams[0]), f(&teams[1]));
+    let description = format!(
+        "Quality: {:.0}\n\nTeam 1:\n{}\n\nTeam 2:\n{}",
+        100.0 * quality,
+        f(&teams[0]),
+        f(&teams[1])
+    );
     ctx.send_message(channel_id, |m| {
         m.embed(|e| {
             e.title(title)
@@ -405,7 +411,7 @@ pub fn score(
                 .enumerate()
                 .map(|(j, (user_id, rating))| {
                     format!(
-                        "{}: {} - ***{:.0}*** ± {:.0}",
+                        "{}: {} - **{:.0}** ± {:.0}",
                         20 * i + j + 1,
                         user_id.mention(),
                         rating.mean(),
@@ -529,7 +535,7 @@ pub fn undo(
                 .enumerate()
                 .map(|(j, (user_id, rating))| {
                     format!(
-                        "{}: {} - ***{:.0}*** ± {:.0}",
+                        "{}: {} - **{:.0}** ± {:.0}",
                         20 * i + j + 1,
                         user_id.mention(),
                         rating.mean(),
@@ -596,7 +602,8 @@ pub fn gameinfo(
             .join("\n")
     };
     let description = format!(
-        "Team 1:\n{}\n\nTeam 2:\n{}",
+        "**{}**\n\nTeam 1:\n{}\n\nTeam 2:\n{}",
+        game.score(),
         f(game.teams()[0]),
         f(game.teams()[1])
     );
