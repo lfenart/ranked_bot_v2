@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use harmony::client::Context;
 use harmony::model::id::{ChannelId, UserId};
-use harmony::model::{Channel, Member, Message};
+use harmony::model::{Channel, Member, Message, User};
 use inline_python::python;
 use trueskill::{Rating, SimpleTrueSkill};
 
@@ -119,13 +119,14 @@ pub fn history(
         lobbies,
         database,
         trueskill,
-        msg.author.id,
+        &msg.author,
         channel.id,
         limit,
     )?;
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn forcehistory(
     ctx: &Context,
     msg: &Message,
@@ -170,13 +171,14 @@ pub fn forcehistory(
         lobbies,
         database,
         trueskill,
-        member.user.id,
+        &member.user,
         channel.id,
         limit,
     )?;
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn history_internal(
     ctx: &Context,
     msg: &Message,
@@ -184,7 +186,7 @@ fn history_internal(
     lobbies: &Lobbies,
     database: &Database,
     trueskill: SimpleTrueSkill,
-    member_id: UserId,
+    user: &User,
     channel_id: ChannelId,
     limit: Option<usize>,
 ) -> Result {
@@ -200,7 +202,7 @@ fn history_internal(
     let mut ratings: HashMap<UserId, _> = HashMap::new();
     let default_rating = trueskill.create_rating();
     let default_info = PlayerInfo::new(default_rating);
-    info_history.push(if let Some(&rating) = initials.get(&member_id.0) {
+    info_history.push(if let Some(&rating) = initials.get(&user.id.0) {
         PlayerInfo::new(Rating::new(rating, default_rating.variance()))
     } else {
         default_info
@@ -249,7 +251,7 @@ fn history_internal(
                 trueskill::Score::Draw => player_info.draws += 1,
             };
             player_info.rating = team1_ratings[i];
-            if user_id == member_id.0 {
+            if user_id == user.id.0 {
                 info_history.push(*player_info);
             }
         }
@@ -261,7 +263,7 @@ fn history_internal(
                 trueskill::Score::Draw => player_info.draws += 1,
             };
             player_info.rating = team2_ratings[i];
-            if user_id == member_id.0 {
+            if user_id == user.id.0 {
                 info_history.push(*player_info);
             }
         }
@@ -296,7 +298,7 @@ fn history_internal(
         .iter()
         .map(|x| (&x.name, &x.color, x.limit))
         .collect::<Vec<_>>();
-    let title = "test";
+    let title = format!("{}'s rating history", user.username);
     python! {
         import matplotlib.pyplot as plt
         import numpy as np

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use chrono::Utc;
 use harmony::client::Context;
@@ -348,7 +348,6 @@ pub fn score(
     lobbies: &mut Lobbies,
     trueskill: SimpleTrueSkill,
     database: &Database,
-    initial_ratings: &HashMap<u64, f64>,
     args: &[String],
 ) -> Result {
     if !checks::check_admin(ctx, msg, roles)? {
@@ -381,13 +380,14 @@ pub fn score(
     if game.score() != Score::Undecided {
         return Err(Error::GameAlreadySet);
     }
+    let initial_ratings = database.get_initial_ratings()?;
     game.set_score(score);
     database.update_game(&game, msg.channel_id)?;
     let games = database
         .get_games()?
         .remove(&msg.channel_id.0)
         .unwrap_or_default();
-    let ratings = Ratings::from_games(&games, initial_ratings, trueskill);
+    let ratings = Ratings::from_games(&games, &initial_ratings, trueskill);
     lobby.set_ratings(ratings);
     let mut ratings = Vec::new();
     for (&user_id, player_info) in lobby.ratings().iter() {
@@ -474,7 +474,6 @@ pub fn undo(
     lobbies: &mut Lobbies,
     database: &Database,
     trueskill: SimpleTrueSkill,
-    initial_ratings: &HashMap<u64, f64>,
     args: &[String],
 ) -> Result {
     if !checks::check_admin(ctx, msg, roles)? {
@@ -493,6 +492,7 @@ pub fn undo(
         return Err(Error::NotEnoughArguments);
     }
     let game_id = args[0].parse()?;
+    let initial_ratings = database.get_initial_ratings()?;
     let mut game = match database.get_game(msg.channel_id.0, game_id) {
         Ok(game) => game,
         Err(rusqlite::Error::QueryReturnedNoRows) => return Err(Error::GameNotFound(game_id)),
@@ -505,7 +505,7 @@ pub fn undo(
         .get_games()?
         .remove(&msg.channel_id.0)
         .unwrap_or_default();
-    let ratings = Ratings::from_games(&games, initial_ratings, trueskill);
+    let ratings = Ratings::from_games(&games, &initial_ratings, trueskill);
     lobby.set_ratings(ratings);
     ctx.send_message(msg.channel_id, |m| {
         m.embed(|e| e.description("Game updated"))
@@ -781,6 +781,99 @@ pub fn swap(
     database.update_game(&game, msg.channel_id)?;
     ctx.send_message(msg.channel_id, |m| {
         m.embed(|e| e.description("Players swapped"))
+    })?;
+    Ok(())
+}
+
+pub fn setrating(
+    ctx: &Context,
+    msg: &Message,
+    roles: &Roles,
+    lobbies: &mut Lobbies,
+    trueskill: SimpleTrueSkill,
+    database: &Database,
+    args: &[String],
+) -> Result {
+    if !checks::check_admin(ctx, msg, roles)? {
+        return Ok(());
+    }
+    let guild_id = if let Some(guild_id) = msg.guild_id {
+        guild_id
+    } else {
+        // Outside guild but admin check passed => should never happen
+        return Ok(());
+    };
+    if args.len() < 2 {
+        return Err(Error::NotEnoughArguments);
+    }
+    let member = if let Some(member) = Member::parse(ctx, guild_id, &args[0])? {
+        member
+    } else {
+        return Err(Error::MemberNotFound(args[0].to_owned()));
+    };
+    let rating = args[1].parse::<i64>()?;
+    database.insert_initial_rating(member.user.id.0, rating as f64)?;
+    let mut games = database.get_games()?;
+    for (channel_id, lobby) in lobbies.iter_mut() {
+        println!("test");
+        let games = if let Some(games) = games.remove(&channel_id.0) {
+            games
+        } else {
+            continue;
+        };
+        let initials = database.get_initial_ratings()?;
+        let ratings = Ratings::from_games(&games, &initials, trueskill);
+        lobby.set_ratings(ratings);
+
+        // Update all leaderboards
+        let mut ratings = Vec::new();
+        for (&user_id, player_info) in lobby.ratings().iter() {
+            if let Some(member) = ctx.member(guild_id, user_id)? {
+                if member.roles.contains(&roles.ranked.into()) {
+                    ratings.push((user_id, player_info.rating));
+                }
+            }
+        }
+        ratings.sort_by(|a, b| b.1.mean().partial_cmp(&a.1.mean()).unwrap());
+        if let Some((webhook_id, webhook_token, messages)) = lobby.webhook_mut() {
+            for &message in messages.iter() {
+                ctx.webhook_delete_message(*webhook_id, webhook_token, message)
+                    .ok(); // Maybe it was already deleted
+            }
+            messages.clear();
+            let pages = (ratings.len() + 19) / 20;
+            for (i, chunk) in ratings.chunks(20).enumerate() {
+                let description = chunk
+                    .iter()
+                    .enumerate()
+                    .map(|(j, (user_id, rating))| {
+                        format!(
+                            "{}: {} - **{:.0}** ± {:.0}",
+                            20 * i + j + 1,
+                            user_id.mention(),
+                            rating.mean(),
+                            2.0 * rating.variance().sqrt()
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let message = ctx.execute_webhook(*webhook_id, webhook_token, true, |m| {
+                    m.embed(|e| {
+                        e.description(description).title(format!(
+                            "Leaderboard ({}/{})",
+                            i + 1,
+                            pages
+                        ))
+                    })
+                })?;
+                if let Some(message) = message {
+                    messages.push(message.id);
+                }
+            }
+        }
+    }
+    ctx.send_message(msg.channel_id, |m| {
+        m.embed(|e| e.description(format!("Initial rating set to {}", rating)))
     })?;
     Ok(())
 }

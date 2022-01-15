@@ -77,4 +77,12 @@ impl Database {
         let intials_raw = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
         intials_raw.collect()
     }
+
+    pub fn insert_initial_rating(&self, user_id: u64, rating: f64) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "INSERT INTO initial (player, rating) VALUES (?1, ?2) ON CONFLICT(player) DO UPDATE SET rating = ?2;",
+            params![user_id, rating],
+        )?;
+        Ok(())
+    }
 }

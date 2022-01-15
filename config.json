@@ -1,5 +1,5 @@
 {
-    "prefix": "?",
+    "prefix": "!",
     "trueskill": {
         "mu": 4000,
         "sigma": 1000,
@@ -57,7 +57,7 @@
         },
         {
             "name": "master",
-            "limit": 800,
+            "limit": 8000,
             "color": "red"
         }
     ]

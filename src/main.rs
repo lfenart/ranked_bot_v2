@@ -5,7 +5,6 @@ mod error;
 mod model;
 mod utils;
 
-use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -76,6 +75,7 @@ fn ready(ctx: Context, _: Ready, lobbies: Arc<RwLock<Lobbies>>, timeout: i64) {
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn message_create(
     ctx: Context,
     msg: Message,
@@ -85,7 +85,6 @@ fn message_create(
     lobbies: Arc<RwLock<Lobbies>>,
     trueskill: &mut SimpleTrueSkill,
     database: &Database,
-    initial_ratings: &HashMap<u64, f64>,
 ) {
     if let Some(content) = msg.content.strip_prefix(prefix) {
         if let Some((command, args)) = parse_command(content) {
@@ -139,7 +138,6 @@ fn message_create(
                     &mut lobbies.write(),
                     *trueskill,
                     database,
-                    initial_ratings,
                     &args,
                 ),
                 "cancel" => commands::cancel(&ctx, &msg, roles, &lobbies.read(), database, &args),
@@ -150,7 +148,6 @@ fn message_create(
                     &mut lobbies.write(),
                     database,
                     *trueskill,
-                    initial_ratings,
                     &args,
                 ),
                 "gamelist" | "gl" => commands::gamelist(&ctx, &msg, &lobbies.read(), database),
@@ -167,6 +164,15 @@ fn message_create(
                     *trueskill,
                 ),
                 "swap" => commands::swap(&ctx, &msg, roles, &lobbies.read(), database, &args),
+                "rating" | "setrating" => commands::setrating(
+                    &ctx,
+                    &msg,
+                    roles,
+                    &mut lobbies.write(),
+                    *trueskill,
+                    database,
+                    &args,
+                ),
                 "info" => commands::info(&ctx, &msg, &lobbies.read(), &args),
                 "forceinfo" => commands::forceinfo(&ctx, &msg, roles, &lobbies.read(), &args),
                 "history" => commands::history(
@@ -248,7 +254,6 @@ fn main() {
                 lobbies.clone(),
                 &mut trueskill,
                 &database,
-                &initials,
             )
         })
         .build();
