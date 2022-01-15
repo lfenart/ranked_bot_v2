@@ -3,6 +3,7 @@ use trueskill::SimpleTrueSkill;
 
 #[derive(Deserialize)]
 pub struct Config {
+    pub prefix: String,
     pub trueskill: SimpleTrueSkill,
     pub lobbies: Vec<Lobby>,
     pub infos: Vec<u64>,

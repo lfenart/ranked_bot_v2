@@ -79,6 +79,7 @@ fn ready(ctx: Context, _: Ready, lobbies: Arc<RwLock<Lobbies>>, timeout: i64) {
 fn message_create(
     ctx: Context,
     msg: Message,
+    prefix: &str,
     roles: &Roles,
     ranks: &[Rank],
     lobbies: Arc<RwLock<Lobbies>>,
@@ -86,7 +87,7 @@ fn message_create(
     database: &Database,
     initial_ratings: &HashMap<u64, f64>,
 ) {
-    if let Some(content) = msg.content.strip_prefix('!') {
+    if let Some(content) = msg.content.strip_prefix(prefix) {
         if let Some((command, args)) = parse_command(content) {
             let result = match command.as_str() {
                 "ping" => commands::ping(&ctx, &msg),
@@ -230,6 +231,7 @@ fn main() {
         }
         Arc::new(RwLock::new(lobbies))
     };
+    let prefix = config.prefix;
     let roles = config.roles;
     let ranks = config.ranks;
     let client = ClientBuilder::new()
@@ -240,6 +242,7 @@ fn main() {
             message_create(
                 ctx,
                 msg,
+                &prefix,
                 &roles,
                 &ranks,
                 lobbies.clone(),
