@@ -321,3 +321,133 @@ fn history_internal(
     ctx.send_files(msg.channel_id, &["plot.png"], |m| m)?;
     Ok(())
 }
+
+pub fn leaderboard(
+    ctx: &Context,
+    msg: &Message,
+    roles: &Roles,
+    lobbies: &Lobbies,
+    args: &[String],
+) -> Result {
+    if !checks::check_admin(ctx, msg, roles)? {
+        return Ok(());
+    }
+    if args.is_empty() {
+        return Err(Error::NotEnoughArguments);
+    }
+    let channel = if let Some(channel) = Channel::parse(ctx, msg.guild_id, &args[0])? {
+        channel
+    } else {
+        return Err(Error::ChannelNotFound(args[0].to_string()));
+    };
+    let page = if let Some(page) = args.get(1) {
+        page.parse()?
+    } else {
+        1
+    };
+    let guild_id = if let Some(guild_id) = msg.guild_id {
+        guild_id
+    } else {
+        // Outside guild but admin check passed => should never happen
+        return Ok(());
+    };
+    let lobby = if let Some(lobby) = lobbies.get(&channel.id) {
+        lobby
+    } else {
+        return Err(Error::NotALobby(channel.id));
+    };
+
+    let mut ratings = Vec::new();
+    for (&user_id, player_info) in lobby.ratings().iter() {
+        if let Some(member) = ctx.member(guild_id, user_id)? {
+            if member.roles.contains(&roles.ranked.into()) {
+                ratings.push((user_id, player_info.rating));
+            }
+        }
+    }
+    ratings.sort_by(|a, b| b.1.mean().partial_cmp(&a.1.mean()).unwrap());
+
+    let pages = (ratings.len() + 19) / 20;
+    let page = page.min(pages).max(1);
+    let ratings = ratings.into_iter().skip(20 * (page - 1)).take(20);
+    let description = ratings
+        .enumerate()
+        .map(|(j, (user_id, rating))| {
+            format!(
+                "{}: {} - **{:.0}** ± {:.0}",
+                20 * (page - 1) + j + 1,
+                user_id.mention(),
+                rating.mean(),
+                2.0 * rating.variance().sqrt()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    ctx.send_message(msg.channel_id, |m| {
+        m.embed(|e| {
+            e.description(description)
+                .title(format!("Leaderboard({}/{})", page, pages))
+        })
+    })?;
+    Ok(())
+}
+
+pub fn lball(
+    ctx: &Context,
+    msg: &Message,
+    roles: &Roles,
+    lobbies: &Lobbies,
+    args: &[String],
+) -> Result {
+    if !checks::check_admin(ctx, msg, roles)? {
+        return Ok(());
+    }
+    if args.is_empty() {
+        return Err(Error::NotEnoughArguments);
+    }
+    let channel = if let Some(channel) = Channel::parse(ctx, msg.guild_id, &args[0])? {
+        channel
+    } else {
+        return Err(Error::ChannelNotFound(args[0].to_string()));
+    };
+    let page = if let Some(page) = args.get(1) {
+        page.parse()?
+    } else {
+        1
+    };
+    let lobby = if let Some(lobby) = lobbies.get(&channel.id) {
+        lobby
+    } else {
+        return Err(Error::NotALobby(channel.id));
+    };
+
+    let mut ratings = Vec::new();
+    for (&user_id, player_info) in lobby.ratings().iter() {
+        ratings.push((user_id, player_info.rating));
+    }
+    ratings.sort_by(|a, b| b.1.mean().partial_cmp(&a.1.mean()).unwrap());
+
+    let pages = (ratings.len() + 19) / 20;
+    let page = page.min(pages).max(1);
+    let ratings = ratings.into_iter().skip(20 * (page - 1)).take(20);
+    let description = ratings
+        .enumerate()
+        .map(|(j, (user_id, rating))| {
+            format!(
+                "{}: {} - **{:.0}** ± {:.0}",
+                20 * (page - 1) + j + 1,
+                user_id.mention(),
+                rating.mean(),
+                2.0 * rating.variance().sqrt()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    ctx.send_message(msg.channel_id, |m| {
+        m.embed(|e| {
+            e.description(description)
+                .title(format!("Leaderboard({}/{})", page, pages))
+        })
+    })?;
+    Ok(())
+}

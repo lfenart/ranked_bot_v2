@@ -194,6 +194,10 @@ fn message_create(
                     *trueskill,
                     &args,
                 ),
+                "leaderboard" | "lb" => {
+                    commands::leaderboard(&ctx, &msg, roles, &lobbies.read(), &args)
+                }
+                "lball" => commands::lball(&ctx, &msg, roles, &lobbies.read(), &args),
                 _ => return,
             };
             if let Err(err) = result {
