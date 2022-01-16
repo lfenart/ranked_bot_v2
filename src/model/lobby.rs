@@ -50,6 +50,7 @@ impl DerefMut for Lobbies {
 #[derive(Debug, Clone)]
 pub struct Lobby {
     queue: HashMap<UserId, DateTime<Utc>>,
+    name: String,
     ratings: Ratings,
     webhook: Option<(WebhookId, String, Vec<MessageId>)>,
     capacity: usize,
@@ -57,9 +58,10 @@ pub struct Lobby {
 }
 
 impl Lobby {
-    pub fn new(capacity: usize, ratings: Ratings) -> Self {
+    pub fn new(name: String, capacity: usize, ratings: Ratings) -> Self {
         Self {
             queue: HashMap::default(),
+            name,
             ratings,
             webhook: None,
             capacity,
@@ -69,6 +71,10 @@ impl Lobby {
 
     pub fn ratings(&self) -> &Ratings {
         &self.ratings
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn join(

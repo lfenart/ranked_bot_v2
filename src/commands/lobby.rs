@@ -89,7 +89,15 @@ fn join_internal(
         }
     };
     if let Some(players) = players {
-        start_game(ctx, msg.channel_id, lobbies, players, trueskill, database)?;
+        start_game(
+            ctx,
+            msg,
+            msg.channel_id,
+            lobbies,
+            players,
+            trueskill,
+            database,
+        )?;
     }
     Ok(())
 }
@@ -103,6 +111,7 @@ pub fn leave(
 ) -> Result {
     leave_internal(
         ctx,
+        msg,
         msg.channel_id,
         msg.author.id,
         false,
@@ -141,6 +150,7 @@ pub fn forceleave(
     for member in members {
         leave_internal(
             ctx,
+            msg,
             msg.channel_id,
             member.user.id,
             true,
@@ -152,8 +162,10 @@ pub fn forceleave(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn leave_internal(
     ctx: &Context,
+    msg: &Message,
     channel_id: ChannelId,
     user_id: UserId,
     force: bool,
@@ -183,7 +195,7 @@ fn leave_internal(
         }
     };
     if let Some(players) = players {
-        start_game(ctx, channel_id, lobbies, players, trueskill, database)?;
+        start_game(ctx, msg, channel_id, lobbies, players, trueskill, database)?;
     }
     Ok(())
 }
@@ -220,19 +232,34 @@ pub fn players(
         }
     };
     if let Some(players) = players {
-        start_game(ctx, msg.channel_id, lobbies, players, trueskill, database)?;
+        start_game(
+            ctx,
+            msg,
+            msg.channel_id,
+            lobbies,
+            players,
+            trueskill,
+            database,
+        )?;
     }
     Ok(())
 }
 
 fn start_game(
     ctx: &Context,
+    msg: &Message,
     channel_id: ChannelId,
     lobbies: &mut Lobbies,
     players: Vec<UserId>,
     trueskill: SimpleTrueSkill,
     database: &Database,
 ) -> Result {
+    let guild_id = if let Some(guild_id) = msg.guild_id {
+        guild_id
+    } else {
+        return Ok(());
+    };
+    let lobby = lobbies.get(&channel_id).unwrap();
     let players = players
         .into_iter()
         .map(|x| {
@@ -268,12 +295,36 @@ fn start_game(
         f(&teams[0]),
         f(&teams[1])
     );
+    let role0 = ctx.create_guild_role(guild_id, |r| {
+        r.name(format!("{} Game {}", lobby.name(), game.id()))
+            .mentionable(true)
+            .hoist(true)
+    })?;
+    let role1 = ctx.create_guild_role(guild_id, |r| {
+        r.name(format!("{} Game {} Team 1", lobby.name(), game.id()))
+            .mentionable(true)
+            .hoist(true)
+    })?;
+    let role2 = ctx.create_guild_role(guild_id, |r| {
+        r.name(format!("{} Game {} Team 2", lobby.name(), game.id()))
+            .mentionable(true)
+            .hoist(true)
+    })?;
+    for (user_id, _) in teams[0].iter() {
+        ctx.add_guild_member_role(guild_id, *user_id, role0.id)?;
+        ctx.add_guild_member_role(guild_id, *user_id, role1.id)?;
+    }
+    for (user_id, _) in teams[1].iter() {
+        ctx.add_guild_member_role(guild_id, *user_id, role0.id)?;
+        ctx.add_guild_member_role(guild_id, *user_id, role2.id)?;
+    }
     ctx.send_message(channel_id, |m| {
-        m.embed(|e| {
-            e.title(title)
-                .description(description)
-                .timestamp(game.datetime())
-        })
+        m.content(format!("{} {}", role1.id.mention(), role2.id.mention()))
+            .embed(|e| {
+                e.title(title)
+                    .description(description)
+                    .timestamp(game.datetime())
+            })
     })?;
     for (&channel_id, lobby) in lobbies.iter_mut() {
         for (user_id, _) in players.iter() {
@@ -431,6 +482,15 @@ pub fn score(
             }
         }
     }
+    let roles = ctx.get_guild_roles(guild_id)?;
+    for role in roles {
+        if role
+            .name
+            .contains(&format!("{} Game {}", lobby.name(), game_id))
+        {
+            ctx.delete_guild_role(guild_id, role.id)?;
+        }
+    }
     ctx.send_message(msg.channel_id, |m| {
         m.embed(|e| e.description("Game updated"))
     })?;
@@ -448,12 +508,19 @@ pub fn cancel(
     if !checks::check_admin(ctx, msg, roles)? {
         return Ok(());
     }
-    if lobbies.get(&msg.channel_id).is_none() {
+    let lobby = if let Some(lobby) = lobbies.get(&msg.channel_id) {
+        lobby
+    } else {
         return Err(Error::NotALobby(msg.channel_id));
-    }
+    };
     if args.is_empty() {
         return Err(Error::NotEnoughArguments);
     }
+    let guild_id = if let Some(guild_id) = msg.guild_id {
+        guild_id
+    } else {
+        return Ok(());
+    };
     let game_id = args[0].parse()?;
     let mut game = database.get_game(msg.channel_id.into(), game_id)?;
     if game.score() != Score::Undecided {
@@ -461,6 +528,15 @@ pub fn cancel(
     }
     game.set_score(Score::Cancelled);
     database.update_game(&game, msg.channel_id)?;
+    let roles = ctx.get_guild_roles(guild_id)?;
+    for role in roles {
+        if role
+            .name
+            .contains(&format!("{} Game {}", lobby.name(), game_id))
+        {
+            ctx.delete_guild_role(guild_id, role.id)?;
+        }
+    }
     ctx.send_message(msg.channel_id, |m| {
         m.embed(|e| e.description("Game cancelled."))
     })?;

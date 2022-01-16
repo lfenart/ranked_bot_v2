@@ -174,7 +174,7 @@ dependencies = [
 [[package]]
 name = "harmony"
 version = "0.1.0"
-source = "git+https://github.com/lfenart/harmony?rev=3873dcd#3873dcd8528045ae101cddacd9ccbfc5782584ce"
+source = "git+https://github.com/lfenart/harmony?rev=bbfc687#bbfc6871efb6aae623c6b0c6f5587f552528bdc4"
 dependencies = [
  "chrono",
  "mime_guess",

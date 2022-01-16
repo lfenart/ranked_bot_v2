@@ -233,7 +233,7 @@ fn main() {
                 &initials,
                 trueskill,
             );
-            let mut lobby = Lobby::new(conf_lobby.capacity, ratings);
+            let mut lobby = Lobby::new(conf_lobby.name, conf_lobby.capacity, ratings);
             if let Some(webhook) = conf_lobby.webhook {
                 lobby.set_webhook(webhook.id.into(), webhook.token);
             }

@@ -16,6 +16,7 @@ pub struct Config {
 #[derive(Deserialize)]
 pub struct Lobby {
     pub channel: u64,
+    pub name: String,
     pub webhook: Option<Webhook>,
     pub capacity: usize,
 }

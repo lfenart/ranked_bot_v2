@@ -9,6 +9,7 @@
     "lobbies": [
         {
             "channel": 739093044346748948,
+            "name": "4v4",
             "webhook": {
                 "id": 0,
                 "token": ""
@@ -17,6 +18,7 @@
         },
         {
             "channel": 859413363062341633,
+            "name": "3v3",
             "webhook": {
                 "id": 0,
                 "token": ""
