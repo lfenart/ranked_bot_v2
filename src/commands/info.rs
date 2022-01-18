@@ -9,6 +9,7 @@ use trueskill::{Rating, SimpleTrueSkill};
 use crate::checks;
 use crate::config::{Rank, Roles};
 use crate::model::{Database, Lobbies, PlayerInfo, Score};
+use crate::utils;
 use crate::{Error, Result};
 
 pub fn info(ctx: &Context, msg: &Message, lobbies: &Lobbies, args: &[String]) -> Result {
@@ -31,7 +32,8 @@ pub fn forceinfo(
     lobbies: &Lobbies,
     args: &[String],
 ) -> Result {
-    if !checks::check_admin(ctx, msg, roles)? {
+    let guild_id = checks::get_guild(msg)?;
+    if !checks::has_role(ctx, guild_id, msg.author.id, roles.admin)? {
         return Ok(());
     }
     if args.len() < 2 {
@@ -41,12 +43,6 @@ pub fn forceinfo(
         channel
     } else {
         return Err(Error::ChannelNotFound(args[0].to_string()));
-    };
-    let guild_id = if let Some(guild_id) = msg.guild_id {
-        guild_id
-    } else {
-        // Outside guild but admin check passed => should never happen
-        return Ok(());
     };
     for arg in args.iter().skip(1) {
         if let Some(member) = Member::parse(ctx, guild_id, arg)? {
@@ -137,7 +133,8 @@ pub fn forcehistory(
     trueskill: SimpleTrueSkill,
     args: &[String],
 ) -> Result {
-    if !checks::check_admin(ctx, msg, roles)? {
+    let guild_id = checks::get_guild(msg)?;
+    if !checks::has_role(ctx, guild_id, msg.author.id, roles.admin)? {
         return Ok(());
     }
     if args.len() < 2 {
@@ -147,12 +144,6 @@ pub fn forcehistory(
         channel
     } else {
         return Err(Error::ChannelNotFound(args[0].to_string()));
-    };
-    let guild_id = if let Some(guild_id) = msg.guild_id {
-        guild_id
-    } else {
-        // Outside guild but admin check passed => should never happen
-        return Ok(());
     };
     let member = if let Some(member) = Member::parse(ctx, guild_id, &args[1])? {
         member
@@ -195,14 +186,14 @@ fn history_internal(
     }
     let games = database
         .get_games()?
-        .remove(&channel_id.0)
+        .remove(&channel_id)
         .unwrap_or_default();
     let mut info_history = Vec::new();
     let initials = database.get_initial_ratings()?;
     let mut ratings: HashMap<UserId, _> = HashMap::new();
     let default_rating = trueskill.create_rating();
     let default_info = PlayerInfo::new(default_rating);
-    info_history.push(if let Some(&rating) = initials.get(&user.id.0) {
+    info_history.push(if let Some(&rating) = initials.get(&user.id) {
         PlayerInfo::new(Rating::new(rating, default_rating.variance()))
     } else {
         default_info
@@ -217,12 +208,12 @@ fn history_internal(
         let teams = game.teams();
         let mut team1_ratings = teams[0]
             .iter()
-            .map(|&x| {
+            .map(|x| {
                 ratings
-                    .get(&x.into())
-                    .map(|x: &PlayerInfo| x.rating)
+                    .get(x)
+                    .map(|y: &PlayerInfo| y.rating)
                     .unwrap_or_else(|| {
-                        if let Some(&rating) = initials.get(&x) {
+                        if let Some(&rating) = initials.get(x) {
                             Rating::new(rating, default_rating.variance())
                         } else {
                             default_rating
@@ -232,9 +223,9 @@ fn history_internal(
             .collect::<Vec<_>>();
         let mut team2_ratings = teams[1]
             .iter()
-            .map(|&x| {
-                ratings.get(&x.into()).map(|x| x.rating).unwrap_or_else(|| {
-                    if let Some(&rating) = initials.get(&x) {
+            .map(|x| {
+                ratings.get(x).map(|y| y.rating).unwrap_or_else(|| {
+                    if let Some(&rating) = initials.get(x) {
                         Rating::new(rating, default_rating.variance())
                     } else {
                         default_rating
@@ -244,26 +235,26 @@ fn history_internal(
             .collect::<Vec<_>>();
         trueskill.update(&mut team1_ratings, &mut team2_ratings, score);
         for (i, &user_id) in teams[0].iter().enumerate() {
-            let player_info = ratings.entry(user_id.into()).or_insert(default_info);
+            let player_info = ratings.entry(user_id).or_insert(default_info);
             match score {
                 trueskill::Score::Win => player_info.wins += 1,
                 trueskill::Score::Loss => player_info.losses += 1,
                 trueskill::Score::Draw => player_info.draws += 1,
             };
             player_info.rating = team1_ratings[i];
-            if user_id == user.id.0 {
+            if user_id == user.id {
                 info_history.push(*player_info);
             }
         }
         for (i, &user_id) in teams[1].iter().enumerate() {
-            let player_info = ratings.entry(user_id.into()).or_insert(default_info);
+            let player_info = ratings.entry(user_id).or_insert(default_info);
             match score {
                 trueskill::Score::Win => player_info.losses += 1,
                 trueskill::Score::Loss => player_info.wins += 1,
                 trueskill::Score::Draw => player_info.draws += 1,
             };
             player_info.rating = team2_ratings[i];
-            if user_id == user.id.0 {
+            if user_id == user.id {
                 info_history.push(*player_info);
             }
         }
@@ -329,7 +320,8 @@ pub fn leaderboard(
     lobbies: &Lobbies,
     args: &[String],
 ) -> Result {
-    if !checks::check_admin(ctx, msg, roles)? {
+    let guild_id = checks::get_guild(msg)?;
+    if !checks::has_role(ctx, guild_id, msg.author.id, roles.admin)? {
         return Ok(());
     }
     if args.is_empty() {
@@ -345,49 +337,18 @@ pub fn leaderboard(
     } else {
         1
     };
-    let guild_id = if let Some(guild_id) = msg.guild_id {
-        guild_id
-    } else {
-        // Outside guild but admin check passed => should never happen
-        return Ok(());
-    };
     let lobby = if let Some(lobby) = lobbies.get(&channel.id) {
         lobby
     } else {
         return Err(Error::NotALobby(channel.id));
     };
-
-    let mut ratings = Vec::new();
-    for (&user_id, player_info) in lobby.ratings().iter() {
-        if let Some(member) = ctx.member(guild_id, user_id)? {
-            if member.roles.contains(&roles.ranked.into()) {
-                ratings.push((user_id, player_info.rating));
-            }
-        }
-    }
-    ratings.sort_by(|a, b| b.1.mean().partial_cmp(&a.1.mean()).unwrap());
-
-    let pages = (ratings.len() + 19) / 20;
-    let page = page.min(pages).max(1);
-    let ratings = ratings.into_iter().skip(20 * (page - 1)).take(20);
-    let description = ratings
-        .enumerate()
-        .map(|(j, (user_id, rating))| {
-            format!(
-                "{}: {} - **{:.0}** ± {:.0}",
-                20 * (page - 1) + j + 1,
-                user_id.mention(),
-                rating.mean(),
-                2.0 * rating.variance().sqrt()
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let leaderboard = utils::leaderboard(lobby, 20, |user_id| {
+        checks::has_role(ctx, guild_id, user_id, roles.ranked)
+    })?;
+    let pages = leaderboard.len();
+    let (title, description) = &leaderboard[page.min(pages) - 1];
     ctx.send_message(msg.channel_id, |m| {
-        m.embed(|e| {
-            e.description(description)
-                .title(format!("Leaderboard({}/{})", page, pages))
-        })
+        m.embed(|e| e.description(description).title(title))
     })?;
     Ok(())
 }
@@ -399,7 +360,8 @@ pub fn lball(
     lobbies: &Lobbies,
     args: &[String],
 ) -> Result {
-    if !checks::check_admin(ctx, msg, roles)? {
+    let guild_id = checks::get_guild(msg)?;
+    if !checks::has_role(ctx, guild_id, msg.author.id, roles.admin)? {
         return Ok(());
     }
     if args.is_empty() {
@@ -421,33 +383,11 @@ pub fn lball(
         return Err(Error::NotALobby(channel.id));
     };
 
-    let mut ratings = Vec::new();
-    for (&user_id, player_info) in lobby.ratings().iter() {
-        ratings.push((user_id, player_info.rating));
-    }
-    ratings.sort_by(|a, b| b.1.mean().partial_cmp(&a.1.mean()).unwrap());
-
-    let pages = (ratings.len() + 19) / 20;
-    let page = page.min(pages).max(1);
-    let ratings = ratings.into_iter().skip(20 * (page - 1)).take(20);
-    let description = ratings
-        .enumerate()
-        .map(|(j, (user_id, rating))| {
-            format!(
-                "{}: {} - **{:.0}** ± {:.0}",
-                20 * (page - 1) + j + 1,
-                user_id.mention(),
-                rating.mean(),
-                2.0 * rating.variance().sqrt()
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let leaderboard = utils::leaderboard(lobby, 20, |_| Ok(true))?;
+    let pages = leaderboard.len();
+    let (title, description) = &leaderboard[page.min(pages) - 1];
     ctx.send_message(msg.channel_id, |m| {
-        m.embed(|e| {
-            e.description(description)
-                .title(format!("Leaderboard({}/{})", page, pages))
-        })
+        m.embed(|e| e.description(description).title(title))
     })?;
     Ok(())
 }

@@ -1,6 +1,7 @@
 use std::fmt;
 
 use chrono::{DateTime, Utc};
+use harmony::model::id::UserId;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
@@ -29,14 +30,14 @@ impl fmt::Display for Score {
 #[derive(Serialize, Deserialize)]
 pub struct Game {
     id: usize,
-    team1: Vec<u64>,
-    team2: Vec<u64>,
+    team1: Vec<UserId>,
+    team2: Vec<UserId>,
     score: Score,
     datetime: DateTime<Utc>,
 }
 
 impl Game {
-    pub fn create(team1: Vec<u64>, team2: Vec<u64>, datetime: DateTime<Utc>) -> Self {
+    pub fn create(team1: Vec<UserId>, team2: Vec<UserId>, datetime: DateTime<Utc>) -> Self {
         Self {
             id: 0,
             team1,
@@ -54,7 +55,7 @@ impl Game {
         self.id = id;
     }
 
-    pub fn teams(&self) -> [&[u64]; 2] {
+    pub fn teams(&self) -> [&[UserId]; 2] {
         [&self.team1, &self.team2]
     }
 
@@ -70,7 +71,7 @@ impl Game {
         self.datetime
     }
 
-    pub fn set_teams(&mut self, mut teams: [Vec<u64>; 2]) {
+    pub fn set_teams(&mut self, mut teams: [Vec<UserId>; 2]) {
         std::mem::swap(&mut self.team1, &mut teams[0]);
         std::mem::swap(&mut self.team2, &mut teams[1]);
     }

@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-use harmony::model::id::ChannelId;
+use harmony::model::id::{ChannelId, UserId};
 use rusqlite::{params, Connection};
 
 use super::Game;
@@ -42,7 +42,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_games(&self) -> rusqlite::Result<HashMap<u64, BTreeMap<usize, Game>>> {
+    pub fn get_games(&self) -> rusqlite::Result<HashMap<ChannelId, BTreeMap<usize, Game>>> {
         let mut stmt = self
             .connection
             .prepare("SELECT id, channel, game FROM games;")?;
@@ -56,7 +56,10 @@ impl Database {
         let mut games = HashMap::<_, BTreeMap<_, _>>::new();
         for game in games_raw {
             let game = game?;
-            games.entry(game.0).or_default().insert(game.1, game.2);
+            games
+                .entry(game.0.into())
+                .or_default()
+                .insert(game.1, game.2);
         }
         Ok(games)
     }
@@ -70,18 +73,19 @@ impl Database {
         })
     }
 
-    pub fn get_initial_ratings(&self) -> rusqlite::Result<HashMap<u64, f64>> {
+    pub fn get_initial_ratings(&self) -> rusqlite::Result<HashMap<UserId, f64>> {
         let mut stmt = self
             .connection
             .prepare("SELECT player, rating FROM initial;")?;
-        let intials_raw = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        let intials_raw =
+            stmt.query_map([], |row| Ok((row.get::<_, u64>(0)?.into(), row.get(1)?)))?;
         intials_raw.collect()
     }
 
-    pub fn insert_initial_rating(&self, user_id: u64, rating: f64) -> rusqlite::Result<()> {
+    pub fn insert_initial_rating(&self, user_id: UserId, rating: f64) -> rusqlite::Result<()> {
         self.connection.execute(
             "INSERT INTO initial (player, rating) VALUES (?1, ?2) ON CONFLICT(player) DO UPDATE SET rating = ?2;",
-            params![user_id, rating],
+            params![user_id.0, rating],
         )?;
         Ok(())
     }

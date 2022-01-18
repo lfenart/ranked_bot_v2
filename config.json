@@ -38,27 +38,32 @@
     "timeout": 90,
     "ranks": [
         {
-            "name": "bronze",
+            "id": 0,
+            "name": "Bronze",
             "limit": 2500,
             "color": "peru"
         },
         {
-            "name": "silver",
+            "id": 0,
+            "name": "Silver",
             "limit": 3500,
             "color": "silver"
         },
         {
-            "name": "gold",
+            "id": 0,
+            "name": "Gold",
             "limit": 4500,
             "color": "gold"
         },
         {
-            "name": "diamond",
+            "id": 0,
+            "name": "Diamond",
             "limit": 5500,
             "color": "blue"
         },
         {
-            "name": "master",
+            "id": 0,
+            "name": "Master",
             "limit": 8000,
             "color": "red"
         }

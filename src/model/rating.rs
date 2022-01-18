@@ -12,7 +12,7 @@ pub struct Ratings(HashMap<UserId, PlayerInfo>);
 impl Ratings {
     pub fn from_games(
         games: &BTreeMap<usize, Game>,
-        initial: &HashMap<u64, f64>,
+        initial: &HashMap<UserId, f64>,
         trueskill: SimpleTrueSkill,
     ) -> Self {
         let mut ratings = HashMap::new();
@@ -30,8 +30,8 @@ impl Ratings {
                 .iter()
                 .map(|&x| {
                     ratings
-                        .get(&x.into())
-                        .map(|x: &PlayerInfo| x.rating)
+                        .get(&x)
+                        .map(|y: &PlayerInfo| y.rating)
                         .unwrap_or_else(|| {
                             if let Some(&rating) = initial.get(&x) {
                                 Rating::new(rating, default_rating.variance())
@@ -44,7 +44,7 @@ impl Ratings {
             let mut team2_ratings = teams[1]
                 .iter()
                 .map(|&x| {
-                    ratings.get(&x.into()).map(|x| x.rating).unwrap_or_else(|| {
+                    ratings.get(&x).map(|x| x.rating).unwrap_or_else(|| {
                         if let Some(&rating) = initial.get(&x) {
                             Rating::new(rating, default_rating.variance())
                         } else {
@@ -55,7 +55,7 @@ impl Ratings {
                 .collect::<Vec<_>>();
             trueskill.update(&mut team1_ratings, &mut team2_ratings, score);
             for (i, &user_id) in teams[0].iter().enumerate() {
-                let player_info = ratings.entry(user_id.into()).or_insert(default_info);
+                let player_info = ratings.entry(user_id).or_insert(default_info);
                 match score {
                     trueskill::Score::Win => player_info.wins += 1,
                     trueskill::Score::Loss => player_info.losses += 1,
@@ -64,7 +64,7 @@ impl Ratings {
                 player_info.rating = team1_ratings[i];
             }
             for (i, &user_id) in teams[1].iter().enumerate() {
-                let player_info = ratings.entry(user_id.into()).or_insert(default_info);
+                let player_info = ratings.entry(user_id).or_insert(default_info);
                 match score {
                     trueskill::Score::Win => player_info.losses += 1,
                     trueskill::Score::Loss => player_info.wins += 1,

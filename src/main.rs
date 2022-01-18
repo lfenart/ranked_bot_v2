@@ -138,6 +138,7 @@ fn message_create(
                     &mut lobbies.write(),
                     *trueskill,
                     database,
+                    ranks,
                     &args,
                 ),
                 "cancel" => commands::cancel(&ctx, &msg, roles, &lobbies.read(), database, &args),
@@ -235,9 +236,9 @@ fn main() {
             );
             let mut lobby = Lobby::new(conf_lobby.name, conf_lobby.capacity, ratings);
             if let Some(webhook) = conf_lobby.webhook {
-                lobby.set_webhook(webhook.id.into(), webhook.token);
+                lobby.set_webhook(webhook.id, webhook.token);
             }
-            lobbies.insert(conf_lobby.channel.into(), lobby);
+            lobbies.insert(conf_lobby.channel, lobby);
         }
         Arc::new(RwLock::new(lobbies))
     };

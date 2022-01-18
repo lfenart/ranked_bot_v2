@@ -174,7 +174,7 @@ dependencies = [
 [[package]]
 name = "harmony"
 version = "0.1.0"
-source = "git+https://github.com/lfenart/harmony?rev=bbfc687#bbfc6871efb6aae623c6b0c6f5587f552528bdc4"
+source = "git+https://github.com/lfenart/harmony?rev=0b662f6#0b662f6e0799c7bcf48a19d6715f044738fb407f"
 dependencies = [
  "chrono",
  "mime_guess",
@@ -918,7 +918,7 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 [[package]]
 name = "trueskill"
 version = "0.1.0"
-source = "git+https://github.com/lfenart/trueskill?rev=4915435#4915435ea65bdb662f104178022f6d0700256e20"
+source = "git+https://github.com/lfenart/trueskill?rev=2029c04#2029c040c697f9b429b7990e4985fd1ba27bfe09"
 dependencies = [
  "serde",
  "statrs",
