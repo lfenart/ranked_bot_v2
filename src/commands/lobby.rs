@@ -465,16 +465,21 @@ pub fn score(
             }
         }
     }
-    let roles = ctx.get_guild_roles(guild_id)?;
-    for role in roles {
-        if role
-            .name
-            .contains(&format!("{} Game {}", lobby.name(), game_id))
-        {
-            ctx.delete_guild_role(guild_id, role.id)?;
+    {
+        let roles = ctx.get_guild_roles(guild_id)?;
+        for role in roles {
+            if role
+                .name
+                .contains(&format!("{} Game {}", lobby.name(), game_id))
+            {
+                ctx.delete_guild_role(guild_id, role.id)?;
+            }
         }
     }
     for &user_id in game.teams()[0] {
+        if !checks::has_role(ctx, guild_id, user_id, roles.ranked)? {
+            continue;
+        }
         let rating = lobbies
             .iter()
             .map(|(_, x)| {
@@ -500,6 +505,9 @@ pub fn score(
         }
     }
     for &user_id in game.teams()[1] {
+        if !checks::has_role(ctx, guild_id, user_id, roles.ranked)? {
+            continue;
+        }
         let rating = lobbies
             .iter()
             .map(|(_, x)| {
