@@ -16,12 +16,14 @@ pub fn info(ctx: &Context, msg: &Message, lobbies: &Lobbies, args: &[String]) ->
     if args.is_empty() {
         return Err(Error::NotEnoughArguments);
     }
-    let channel = if let Some(channel) = Channel::parse(ctx, msg.guild_id, &args[0])? {
-        channel
+    let channel_id = if let Some(channel) = Channel::parse(ctx, msg.guild_id, &args[0])? {
+        channel.id
+    } else if let Some(lobby) = lobbies.iter().find(|(_, x)| x.name() == args[0]) {
+        *lobby.0
     } else {
         return Err(Error::ChannelNotFound(args[0].to_string()));
     };
-    info_internal(ctx, msg, lobbies, msg.author.id, channel.id)?;
+    info_internal(ctx, msg, lobbies, msg.author.id, channel_id)?;
     Ok(())
 }
 
@@ -39,14 +41,16 @@ pub fn forceinfo(
     if args.len() < 2 {
         return Err(Error::NotEnoughArguments);
     }
-    let channel = if let Some(channel) = Channel::parse(ctx, msg.guild_id, &args[0])? {
-        channel
+    let channel_id = if let Some(channel) = Channel::parse(ctx, msg.guild_id, &args[0])? {
+        channel.id
+    } else if let Some(lobby) = lobbies.iter().find(|(_, x)| x.name() == args[0]) {
+        *lobby.0
     } else {
         return Err(Error::ChannelNotFound(args[0].to_string()));
     };
     for arg in args.iter().skip(1) {
         if let Some(member) = Member::parse(ctx, guild_id, arg)? {
-            info_internal(ctx, msg, lobbies, member.user.id, channel.id)?;
+            info_internal(ctx, msg, lobbies, member.user.id, channel_id)?;
         }
     }
     Ok(())
@@ -98,8 +102,10 @@ pub fn history(
     if args.is_empty() {
         return Err(Error::NotEnoughArguments);
     }
-    let channel = if let Some(channel) = Channel::parse(ctx, msg.guild_id, &args[0])? {
-        channel
+    let channel_id = if let Some(channel) = Channel::parse(ctx, msg.guild_id, &args[0])? {
+        channel.id
+    } else if let Some(lobby) = lobbies.iter().find(|(_, x)| x.name() == args[0]) {
+        *lobby.0
     } else {
         return Err(Error::ChannelNotFound(args[0].to_string()));
     };
@@ -116,7 +122,7 @@ pub fn history(
         database,
         trueskill,
         &msg.author,
-        channel.id,
+        channel_id,
         limit,
     )?;
     Ok(())
@@ -140,8 +146,10 @@ pub fn forcehistory(
     if args.len() < 2 {
         return Err(Error::NotEnoughArguments);
     }
-    let channel = if let Some(channel) = Channel::parse(ctx, msg.guild_id, &args[0])? {
-        channel
+    let channel_id = if let Some(channel) = Channel::parse(ctx, msg.guild_id, &args[0])? {
+        channel.id
+    } else if let Some(lobby) = lobbies.iter().find(|(_, x)| x.name() == args[0]) {
+        *lobby.0
     } else {
         return Err(Error::ChannelNotFound(args[0].to_string()));
     };
@@ -163,7 +171,7 @@ pub fn forcehistory(
         database,
         trueskill,
         &member.user,
-        channel.id,
+        channel_id,
         limit,
     )?;
     Ok(())
@@ -327,8 +335,10 @@ pub fn leaderboard(
     if args.is_empty() {
         return Err(Error::NotEnoughArguments);
     }
-    let channel = if let Some(channel) = Channel::parse(ctx, msg.guild_id, &args[0])? {
-        channel
+    let channel_id = if let Some(channel) = Channel::parse(ctx, msg.guild_id, &args[0])? {
+        channel.id
+    } else if let Some(lobby) = lobbies.iter().find(|(_, x)| x.name() == args[0]) {
+        *lobby.0
     } else {
         return Err(Error::ChannelNotFound(args[0].to_string()));
     };
@@ -337,10 +347,10 @@ pub fn leaderboard(
     } else {
         1
     };
-    let lobby = if let Some(lobby) = lobbies.get(&channel.id) {
+    let lobby = if let Some(lobby) = lobbies.get(&channel_id) {
         lobby
     } else {
-        return Err(Error::NotALobby(channel.id));
+        return Err(Error::NotALobby(channel_id));
     };
     let leaderboard = utils::leaderboard(lobby, 20, |user_id| {
         checks::has_role(ctx, guild_id, user_id, roles.ranked)
@@ -367,8 +377,10 @@ pub fn lball(
     if args.is_empty() {
         return Err(Error::NotEnoughArguments);
     }
-    let channel = if let Some(channel) = Channel::parse(ctx, msg.guild_id, &args[0])? {
-        channel
+    let channel_id = if let Some(channel) = Channel::parse(ctx, msg.guild_id, &args[0])? {
+        channel.id
+    } else if let Some(lobby) = lobbies.iter().find(|(_, x)| x.name() == args[0]) {
+        *lobby.0
     } else {
         return Err(Error::ChannelNotFound(args[0].to_string()));
     };
@@ -377,10 +389,10 @@ pub fn lball(
     } else {
         1
     };
-    let lobby = if let Some(lobby) = lobbies.get(&channel.id) {
+    let lobby = if let Some(lobby) = lobbies.get(&channel_id) {
         lobby
     } else {
-        return Err(Error::NotALobby(channel.id));
+        return Err(Error::NotALobby(channel_id));
     };
 
     let leaderboard = utils::leaderboard(lobby, 20, |_| Ok(true))?;

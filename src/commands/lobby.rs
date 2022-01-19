@@ -650,6 +650,9 @@ pub fn gamelist(ctx: &Context, msg: &Message, lobbies: &Lobbies, database: &Data
         .get_games()?
         .remove(&msg.channel_id)
         .unwrap_or_default();
+    if games.is_empty() {
+        return Err(Error::GameNotFound(1));
+    }
     let description = games
         .into_iter()
         .rev()
@@ -658,6 +661,39 @@ pub fn gamelist(ctx: &Context, msg: &Message, lobbies: &Lobbies, database: &Data
         .collect::<Vec<_>>()
         .join("\n");
     ctx.send_message(msg.channel_id, |m| m.embed(|e| e.description(description)))?;
+    Ok(())
+}
+
+pub fn lastgame(ctx: &Context, msg: &Message, lobbies: &Lobbies, database: &Database) -> Result {
+    if lobbies.get(&msg.channel_id).is_none() {
+        return Err(Error::NotALobby(msg.channel_id));
+    }
+    let games = database.get_games()?;
+    let game = match games.get(&msg.channel_id).and_then(|x| x.values().last()) {
+        Some(game) => game,
+        None => return Err(Error::GameNotFound(1)),
+    };
+    let title = format!("Game {}", game.id());
+    let f = |users: &[UserId]| {
+        users
+            .iter()
+            .map(|x| x.mention())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let description = format!(
+        "**{}**\n\nTeam 1:\n{}\n\nTeam 2:\n{}",
+        game.score(),
+        f(game.teams()[0]),
+        f(game.teams()[1])
+    );
+    ctx.send_message(msg.channel_id, |m| {
+        m.embed(|e| {
+            e.title(title)
+                .description(description)
+                .timestamp(game.datetime())
+        })
+    })?;
     Ok(())
 }
 
@@ -670,6 +706,9 @@ pub fn gameinfo(
 ) -> Result {
     if lobbies.get(&msg.channel_id).is_none() {
         return Err(Error::NotALobby(msg.channel_id));
+    }
+    if args.is_empty() {
+        return Err(Error::NotEnoughArguments);
     }
     let game_id = args[0].parse()?;
     let game = match database.get_game(msg.channel_id.into(), game_id) {

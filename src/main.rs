@@ -152,6 +152,7 @@ fn message_create(
                     &args,
                 ),
                 "gamelist" | "gl" => commands::gamelist(&ctx, &msg, &lobbies.read(), database),
+                "lastgame" => commands::lastgame(&ctx, &msg, &lobbies.read(), database),
                 "gameinfo" | "gi" => {
                     commands::gameinfo(&ctx, &msg, &lobbies.read(), database, &args)
                 }
