@@ -303,53 +303,103 @@ fn start_game(
         f(&teams[0]),
         f(&teams[1])
     );
-    let role0 = ctx.create_guild_role(guild_id, |r| {
-        r.name(format!("{} Game {}", lobby.name(), game.id()))
-            .mentionable(true)
-            .hoist(true)
-    })?;
-    let role1 = ctx.create_guild_role(guild_id, |r| {
-        r.name(format!("{} Game {} Team 1", lobby.name(), game.id()))
-            .mentionable(true)
-            .hoist(true)
-    })?;
-    let role2 = ctx.create_guild_role(guild_id, |r| {
-        r.name(format!("{} Game {} Team 2", lobby.name(), game.id()))
-            .mentionable(true)
-            .hoist(true)
-    })?;
-    for (user_id, _) in teams[0].iter() {
-        ctx.add_guild_member_role(guild_id, *user_id, role0.id)?;
-        ctx.add_guild_member_role(guild_id, *user_id, role1.id)?;
-    }
-    for (user_id, _) in teams[1].iter() {
-        ctx.add_guild_member_role(guild_id, *user_id, role0.id)?;
-        ctx.add_guild_member_role(guild_id, *user_id, role2.id)?;
-    }
-    ctx.send_message(channel_id, |m| {
-        m.content(format!("{} {}", role1.id.mention(), role2.id.mention()))
-            .embed(|e| {
-                e.title(title)
-                    .description(description)
-                    .timestamp(game.datetime())
-            })
-    })?;
-    for (&channel_id, lobby) in lobbies.iter_mut() {
-        for (user_id, _) in players.iter() {
-            if lobby.leave(*user_id, true).is_ok() {
-                ctx.send_message(channel_id, |m| {
-                    m.embed(|e| {
-                        e.description(format!(
-                            "[{}/{}] {} left the queue (Game started).",
-                            lobby.len(),
-                            lobby.capacity(),
-                            user_id.mention(),
-                        ))
-                    })
-                })?;
+    rayon::scope(|s| {
+        // Send game started message
+        s.spawn(|_| {
+            let content = teams[0]
+                .iter()
+                .chain(teams[1].iter())
+                .map(|(x, _)| x.mention())
+                .collect::<Vec<_>>()
+                .join(" ");
+            if let Err(err) = ctx.send_message(channel_id, |m| {
+                m.content(content).embed(|e| {
+                    e.title(title)
+                        .description(description)
+                        .timestamp(game.datetime())
+                })
+            }) {
+                eprintln!("Err: {:?}", err);
             }
+        });
+        // Create global game role
+        s.spawn(|_| {
+            if let Err(err) = (|| {
+                let role = ctx.create_guild_role(guild_id, |r| {
+                    r.name(format!("{} Game {}", lobby.name(), game.id()))
+                        .mentionable(true)
+                        .hoist(true)
+                })?;
+                for (user_id, _) in teams[0].iter().chain(teams[1].iter()) {
+                    if let Err(err) = ctx.add_guild_member_role(guild_id, *user_id, role.id) {
+                        eprintln!("Err: {:?}", err);
+                    }
+                }
+                Result::Ok(())
+            })() {
+                eprintln!("Err: {:?}", err);
+            }
+        });
+        // Create team 1 role
+        s.spawn(|_| {
+            if let Err(err) = (|| {
+                let role = ctx.create_guild_role(guild_id, |r| {
+                    r.name(format!("{} Game {} Team 1", lobby.name(), game.id()))
+                        .mentionable(true)
+                        .hoist(true)
+                })?;
+                for (user_id, _) in teams[0].iter() {
+                    if let Err(err) = ctx.add_guild_member_role(guild_id, *user_id, role.id) {
+                        eprintln!("Err: {:?}", err);
+                    }
+                }
+                Result::Ok(())
+            })() {
+                eprintln!("Err: {:?}", err);
+            }
+        });
+        // Create team 2 role
+        s.spawn(|_| {
+            if let Err(err) = (|| {
+                let role = ctx.create_guild_role(guild_id, |r| {
+                    r.name(format!("{} Game {} Team 2", lobby.name(), game.id()))
+                        .mentionable(true)
+                        .hoist(true)
+                })?;
+                for (user_id, _) in teams[1].iter() {
+                    if let Err(err) = ctx.add_guild_member_role(guild_id, *user_id, role.id) {
+                        eprintln!("Err: {:?}", err);
+                    }
+                }
+                Result::Ok(())
+            })() {
+                eprintln!("Err: {:?}", err);
+            }
+        });
+    });
+    // Remove players from other lobbies
+    rayon::scope(|s| {
+        for (channel_id, lobby) in lobbies.iter_mut() {
+            s.spawn(|_| {
+                for (user_id, _) in players.iter() {
+                    if lobby.leave(*user_id, true).is_ok() {
+                        if let Err(err) = ctx.send_message(*channel_id, |m| {
+                            m.embed(|e| {
+                                e.description(format!(
+                                    "[{}/{}] {} left the queue (Game started).",
+                                    lobby.len(),
+                                    lobby.capacity(),
+                                    user_id.mention(),
+                                ))
+                            })
+                        }) {
+                            eprintln!("Err: {:?}", err);
+                        }
+                    }
+                }
+            });
         }
-    }
+    });
     Ok(())
 }
 
@@ -452,14 +502,22 @@ pub fn score(
     })?;
     if let Some((webhook_id, webhook_token, messages)) = lobby.webhook_mut() {
         for &message in messages.iter() {
-            ctx.webhook_delete_message(*webhook_id, webhook_token, message)
-                .ok(); // Maybe it was already deleted
+            if let Err(err) = ctx.webhook_delete_message(*webhook_id, webhook_token, message) {
+                eprintln!("Err: {:?}", err);
+            }
         }
         messages.clear();
         for (title, description) in leaderboard.iter() {
             let message = ctx.execute_webhook(*webhook_id, webhook_token, true, |m| {
                 m.embed(|e| e.description(description).title(title))
-            })?;
+            });
+            let message = match message {
+                Ok(message) => message,
+                Err(err) => {
+                    eprintln!("Err: {:?}", err);
+                    continue;
+                }
+            };
             if let Some(message) = message {
                 messages.push(message.id);
             }
