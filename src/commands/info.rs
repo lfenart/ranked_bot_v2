@@ -326,6 +326,7 @@ pub fn leaderboard(
     msg: &Message,
     roles: &Roles,
     lobbies: &Lobbies,
+    ranks: &[Rank],
     args: &[String],
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
@@ -352,11 +353,11 @@ pub fn leaderboard(
     } else {
         return Err(Error::NotALobby(channel_id));
     };
-    let leaderboard = utils::leaderboard(lobby, 20, |user_id| {
+    let leaderboard = utils::leaderboard(lobby, 15, ranks, |user_id| {
         checks::has_role(ctx, guild_id, user_id, roles.ranked)
     })?;
     let pages = leaderboard.len();
-    let (title, description) = &leaderboard[page.min(pages) - 1];
+    let (title, description) = &leaderboard[page.max(1).min(pages) - 1];
     ctx.send_message(msg.channel_id, |m| {
         m.embed(|e| e.description(description).title(title))
     })?;
@@ -368,6 +369,7 @@ pub fn lball(
     msg: &Message,
     roles: &Roles,
     lobbies: &Lobbies,
+    ranks: &[Rank],
     args: &[String],
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
@@ -395,7 +397,7 @@ pub fn lball(
         return Err(Error::NotALobby(channel_id));
     };
 
-    let leaderboard = utils::leaderboard(lobby, 20, |_| Ok(true))?;
+    let leaderboard = utils::leaderboard(lobby, 15, ranks, |_| Ok(true))?;
     let pages = leaderboard.len();
     let (title, description) = &leaderboard[page.min(pages) - 1];
     ctx.send_message(msg.channel_id, |m| {

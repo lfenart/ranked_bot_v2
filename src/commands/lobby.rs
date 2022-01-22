@@ -515,7 +515,7 @@ pub fn score(
         .unwrap_or_default();
     let ratings = Ratings::from_games(&games, &initial_ratings, trueskill);
     lobby.set_ratings(ratings);
-    let leaderboard = utils::leaderboard(lobby, 20, |user_id| {
+    let leaderboard = utils::leaderboard(lobby, 15, ranks, |user_id| {
         checks::has_role(ctx, guild_id, user_id, roles.ranked)
     })?;
     if let Some((webhook_id, webhook_token, messages)) = lobby.webhook_mut() {
@@ -706,6 +706,7 @@ pub fn cancel(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn undo(
     ctx: &Context,
     msg: &Message,
@@ -713,6 +714,7 @@ pub fn undo(
     lobbies: &mut Lobbies,
     database: &Database,
     trueskill: SimpleTrueSkill,
+    ranks: &[Rank],
     args: &[String],
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
@@ -747,7 +749,7 @@ pub fn undo(
     if prev_score == Score::Cancelled || prev_score == Score::Undecided {
         return Ok(());
     }
-    let leaderboard = utils::leaderboard(lobby, 20, |user_id| {
+    let leaderboard = utils::leaderboard(lobby, 15, ranks, |user_id| {
         checks::has_role(ctx, guild_id, user_id, roles.ranked)
     })?;
     if let Some((webhook_id, webhook_token, messages)) = lobby.webhook_mut() {
@@ -1032,6 +1034,7 @@ pub fn swap(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn setrating(
     ctx: &Context,
     msg: &Message,
@@ -1039,6 +1042,7 @@ pub fn setrating(
     lobbies: &mut Lobbies,
     trueskill: SimpleTrueSkill,
     database: &Database,
+    ranks: &[Rank],
     args: &[String],
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
@@ -1067,7 +1071,7 @@ pub fn setrating(
         lobby.set_ratings(ratings);
 
         // Update all leaderboards
-        let leaderboard = utils::leaderboard(lobby, 20, |user_id| {
+        let leaderboard = utils::leaderboard(lobby, 15, ranks, |user_id| {
             checks::has_role(ctx, guild_id, user_id, roles.ranked)
         })?;
         if let Some((webhook_id, webhook_token, messages)) = lobby.webhook_mut() {

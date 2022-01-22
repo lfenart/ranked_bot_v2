@@ -1,10 +1,35 @@
-use harmony::model::id::UserId;
+use harmony::model::id::{RoleId, UserId};
+use trueskill::Rating;
 
+use crate::config::Rank;
 use crate::model::Lobby;
 use crate::model::PlayerInfo;
 use crate::Result;
 
-pub fn leaderboard<F>(lobby: &Lobby, page_len: usize, mut f: F) -> Result<Vec<(String, String)>>
+enum Row {
+    Player(UserId, Rating),
+    Rank(RoleId, f64),
+}
+
+impl Row {
+    fn value(&self) -> f64 {
+        match self {
+            Self::Player(_, x) => x.mean(),
+            Self::Rank(_, x) => *x,
+        }
+    }
+
+    fn is_rank(&self) -> bool {
+        matches!(self, Self::Rank(_, _))
+    }
+}
+
+pub fn leaderboard<F>(
+    lobby: &Lobby,
+    page_len: usize,
+    ranks: &[Rank],
+    mut f: F,
+) -> Result<Vec<(String, String)>>
 where
     F: FnMut(UserId) -> Result<bool>,
 {
@@ -21,18 +46,41 @@ where
     let pages = pages.max(1);
     let mut v = Vec::new();
     for (page, ratings) in ratings.chunks(page_len).enumerate() {
+        let mut ratings = ratings
+            .iter()
+            .enumerate()
+            .map(|(i, (user_id, rating))| (page * page_len + i + 1, Row::Player(*user_id, *rating)))
+            .chain(ranks.iter().map(|rank| (0, Row::Rank(rank.id, rank.limit))))
+            .collect::<Vec<_>>();
+        ratings.sort_by(|(_, a), (_, b)| b.value().partial_cmp(&a.value()).unwrap());
+        for i in (0..ratings.len()).rev() {
+            match ratings[i].1 {
+                Row::Rank(_, _) => continue,
+                Row::Player(_, _) => {
+                    ratings.truncate(i + 1);
+                    break;
+                }
+            }
+        }
+        while ratings.len() > 1 && ratings[0].1.is_rank() && ratings[1].1.is_rank() {
+            ratings.remove(0);
+        }
         let title = format!("Leaderboard ({}/{})", page + 1, pages);
         let description = ratings
             .iter()
-            .enumerate()
-            .map(|(i, (user_id, x))| {
-                format!(
-                    "{}: {} - **{:.0}** ± {:.0}",
-                    page * page_len + i + 1,
-                    user_id.mention(),
-                    x.mean(),
-                    2.0 * x.variance().sqrt(),
-                )
+            .map(|(i, x)| match x {
+                Row::Player(user_id, rating) => {
+                    format!(
+                        "{}: {} - **{:.0}** ± {:.0}",
+                        i,
+                        user_id.mention(),
+                        rating.mean(),
+                        2.0 * rating.variance().sqrt(),
+                    )
+                }
+                Row::Rank(role_id, _) => {
+                    format!("-- {} --", role_id.mention())
+                }
             })
             .collect::<Vec<_>>()
             .join("\n");

@@ -149,6 +149,7 @@ fn message_create(
                     &mut lobbies.write(),
                     database,
                     *trueskill,
+                    ranks,
                     &args,
                 ),
                 "gamelist" | "gl" => commands::gamelist(&ctx, &msg, &lobbies.read(), database),
@@ -173,6 +174,7 @@ fn message_create(
                     &mut lobbies.write(),
                     *trueskill,
                     database,
+                    ranks,
                     &args,
                 ),
                 "info" => commands::info(&ctx, &msg, &lobbies.read(), &args),
@@ -197,9 +199,9 @@ fn message_create(
                     &args,
                 ),
                 "leaderboard" | "lb" => {
-                    commands::leaderboard(&ctx, &msg, roles, &lobbies.read(), &args)
+                    commands::leaderboard(&ctx, &msg, roles, &lobbies.read(), ranks, &args)
                 }
-                "lball" => commands::lball(&ctx, &msg, roles, &lobbies.read(), &args),
+                "lball" => commands::lball(&ctx, &msg, roles, &lobbies.read(), ranks, &args),
                 _ => return,
             };
             if let Err(err) = result {
