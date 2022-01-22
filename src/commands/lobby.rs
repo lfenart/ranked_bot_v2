@@ -306,15 +306,33 @@ fn start_game(
                 .map(|(x, _)| x.mention())
                 .collect::<Vec<_>>()
                 .join(" ");
-            if let Err(err) = ctx.send_message(channel_id, |m| {
+            let message = match ctx.send_message(channel_id, |m| {
                 m.content(content).embed(|e| {
                     e.title(title)
                         .description(description)
                         .timestamp(game.datetime())
                 })
             }) {
-                eprintln!("Err: {:?}", err);
-            }
+                Ok(message) => message,
+                Err(err) => {
+                    eprintln!("Err: {:?}", err);
+                    return;
+                }
+            };
+            teams[0]
+                .par_iter()
+                .chain(teams[1].par_iter())
+                .for_each(|(user_id, _)| {
+                    if let Err(err) = (|| {
+                        let channel = ctx.create_dm(*user_id)?;
+                        ctx.send_message(channel.id, |m| {
+                            m.content(format!("Game started: {}", message.channel_id.mention()))
+                        })?;
+                        Result::Ok(())
+                    })() {
+                        eprintln!("Err: {:?}", err);
+                    }
+                });
         });
         // Create global game role
         s.spawn(|_| {
