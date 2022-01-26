@@ -218,7 +218,7 @@ dependencies = [
 [[package]]
 name = "harmony"
 version = "0.1.0"
-source = "git+https://github.com/lfenart/harmony?rev=5e04bc4#5e04bc483413cfad50735406e42b3c526b3183fd"
+source = "git+https://github.com/lfenart/harmony?rev=c66cbe9#c66cbe9d0065f499230bda2b6dd1e14e1dbc3878"
 dependencies = [
  "chrono",
  "crossbeam-channel",

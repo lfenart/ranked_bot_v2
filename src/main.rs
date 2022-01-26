@@ -166,7 +166,15 @@ fn message_create(
                     database,
                     *trueskill,
                 ),
-                "swap" => commands::swap(&ctx, &msg, roles, &lobbies.read(), database, &args),
+                "swap" => commands::swap(
+                    &ctx,
+                    &msg,
+                    roles,
+                    &lobbies.read(),
+                    database,
+                    *trueskill,
+                    &args,
+                ),
                 "rating" | "setrating" => commands::setrating(
                     &ctx,
                     &msg,

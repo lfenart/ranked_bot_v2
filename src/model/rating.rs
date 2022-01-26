@@ -16,6 +16,12 @@ impl Ratings {
         trueskill: SimpleTrueSkill,
     ) -> Self {
         let mut ratings = HashMap::new();
+        for (user_id, rating) in initial.iter() {
+            ratings.insert(
+                *user_id,
+                PlayerInfo::new(Rating::new(*rating, trueskill.sigma().powi(2))),
+            );
+        }
         let default_rating = trueskill.create_rating();
         let default_info = PlayerInfo::new(default_rating);
         for game in games.values() {
@@ -32,13 +38,7 @@ impl Ratings {
                     ratings
                         .get(&x)
                         .map(|y: &PlayerInfo| y.rating)
-                        .unwrap_or_else(|| {
-                            if let Some(&rating) = initial.get(&x) {
-                                Rating::new(rating, default_rating.variance())
-                            } else {
-                                default_rating
-                            }
-                        })
+                        .unwrap_or_else(|| default_rating)
                 })
                 .collect::<Vec<_>>();
             let mut team2_ratings = teams[1]

@@ -506,15 +506,65 @@ pub fn score(
     if game.score() != Score::Undecided {
         return Err(Error::GameAlreadySet);
     }
-    let initial_ratings = database.get_initial_ratings()?;
     game.set_score(score);
     database.update_game(&game, msg.channel_id)?;
+    let teams = game.teams();
+    let default_rating = trueskill.create_rating();
+    let old_ratings: [Vec<f64>; 2] = [
+        teams[0]
+            .iter()
+            .map(|x| {
+                lobby
+                    .ratings()
+                    .get(x)
+                    .map(|x| x.rating)
+                    .unwrap_or(default_rating)
+                    .mean()
+            })
+            .collect(),
+        teams[1]
+            .iter()
+            .map(|x| {
+                lobby
+                    .ratings()
+                    .get(x)
+                    .map(|x| x.rating)
+                    .unwrap_or(default_rating)
+                    .mean()
+            })
+            .collect(),
+    ];
+    let initial_ratings = database.get_initial_ratings()?;
     let games = database
         .get_games()?
         .remove(&msg.channel_id)
         .unwrap_or_default();
     let ratings = Ratings::from_games(&games, &initial_ratings, trueskill);
     lobby.set_ratings(ratings);
+    let new_ratings: [Vec<f64>; 2] = [
+        teams[0]
+            .iter()
+            .map(|x| {
+                lobby
+                    .ratings()
+                    .get(x)
+                    .map(|x| x.rating)
+                    .unwrap_or(default_rating)
+                    .mean()
+            })
+            .collect(),
+        teams[1]
+            .iter()
+            .map(|x| {
+                lobby
+                    .ratings()
+                    .get(x)
+                    .map(|x| x.rating)
+                    .unwrap_or(default_rating)
+                    .mean()
+            })
+            .collect(),
+    ];
     let leaderboard = utils::leaderboard(lobby, 15, ranks, |user_id| {
         checks::has_role(ctx, guild_id, user_id, roles.ranked)
     })?;
@@ -653,8 +703,58 @@ pub fn score(
             });
         });
         s.spawn(|_| {
+            let f = |users: &[UserId], old_ratings: &[f64], new_ratings: &[f64]| {
+                users
+                    .iter()
+                    .zip(old_ratings.iter().zip(new_ratings.iter()))
+                    .map(|(x, (old, new))| {
+                        let old_rank = utils::get_rank(ranks, *old);
+                        let new_rank = utils::get_rank(ranks, *new);
+                        if let Ok(true) = checks::has_role(ctx, guild_id, *x, roles.ranked) {
+                            let rank_update = if old_rank.id != new_rank.id {
+                                format!("{} => {}", old_rank.id.mention(), new_rank.id.mention())
+                            } else {
+                                "".to_owned()
+                            };
+                            if new >= old {
+                                format!(
+                                    "{} {:.0} + {:.0} = {:.0} {}",
+                                    x.mention(),
+                                    old,
+                                    new - old,
+                                    new,
+                                    rank_update,
+                                )
+                            } else {
+                                format!(
+                                    "{} {:.0} - {:.0} = {:.0} {}",
+                                    x.mention(),
+                                    old,
+                                    old - new,
+                                    new,
+                                    rank_update,
+                                )
+                            }
+                        } else if new >= old {
+                            format!("{} +{:.0}", x.mention(), new - old,)
+                        } else {
+                            format!("{} -{:.0}", x.mention(), old - new,)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            let description = format!(
+                "**{}**\n\nTeam 1:\n{}\n\nTeam 2:\n{}",
+                score,
+                f(teams[0], &old_ratings[0], &new_ratings[0]),
+                f(teams[1], &old_ratings[1], &new_ratings[1])
+            );
             if let Err(err) = ctx.send_message(msg.channel_id, |m| {
-                m.embed(|e| e.description("Game updated"))
+                m.embed(|e| {
+                    e.description(description)
+                        .title(format!("Game {}", game_id))
+                })
             }) {
                 eprintln!("Err: {:?}", err);
             }
@@ -701,7 +801,7 @@ pub fn cancel(
         }
     });
     ctx.send_message(msg.channel_id, |m| {
-        m.embed(|e| e.description("Game cancelled."))
+        m.embed(|e| e.description(format!("Game {} cancelled.", game_id)))
     })?;
     Ok(())
 }
@@ -744,7 +844,7 @@ pub fn undo(
     let ratings = Ratings::from_games(&games, &initial_ratings, trueskill);
     lobby.set_ratings(ratings);
     ctx.send_message(msg.channel_id, |m| {
-        m.embed(|e| e.description("Game updated"))
+        m.embed(|e| e.description(format!("Game {} undone.", game_id)))
     })?;
     if prev_score == Score::Cancelled || prev_score == Score::Undecided {
         return Ok(());
@@ -963,15 +1063,18 @@ pub fn swap(
     roles: &Roles,
     lobbies: &Lobbies,
     database: &Database,
+    trueskill: SimpleTrueSkill,
     args: &[String],
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
     if !checks::has_role(ctx, guild_id, msg.author.id, roles.admin)? {
         return Ok(());
     }
-    if lobbies.get(&msg.channel_id).is_none() {
+    let lobby = if let Some(lobby) = lobbies.get(&msg.channel_id) {
+        lobby
+    } else {
         return Err(Error::NotALobby(msg.channel_id));
-    }
+    };
     let member1 = if let Some(member) = Member::parse(ctx, guild_id, &args[0])? {
         member
     } else {
@@ -1002,22 +1105,52 @@ pub fn swap(
         if team1.contains(&member2.user.id) {
             return Err(Error::SameTeam);
         } else {
+            let roles = ctx.get_guild_roles(guild_id)?;
+            let role1 = roles
+                .iter()
+                .find(|x| x.name == format!("{} Game {} Team 1", lobby.name(), game.id()));
             team1.remove(&member1.user.id);
             team1.insert(member2.user.id);
+            if let Some(role1) = role1 {
+                ctx.remove_guild_member_role(guild_id, member1.user.id, role1.id)?;
+                ctx.add_guild_member_role(guild_id, member2.user.id, role1.id)?;
+            }
             if team2.contains(&member2.user.id) {
+                let role2 = roles
+                    .iter()
+                    .find(|x| x.name == format!("{} Game {} Team 2", lobby.name(), game.id()));
                 team2.remove(&member2.user.id);
                 team2.insert(member1.user.id);
+                if let Some(role2) = role2 {
+                    ctx.remove_guild_member_role(guild_id, member2.user.id, role2.id)?;
+                    ctx.add_guild_member_role(guild_id, member1.user.id, role2.id)?;
+                }
             }
         }
     } else if team2.contains(&member1.user.id) {
         if team2.contains(&member2.user.id) {
             return Err(Error::SameTeam);
         } else {
+            let roles = ctx.get_guild_roles(guild_id)?;
+            let role2 = roles
+                .iter()
+                .find(|x| x.name == format!("{} Game {} Team 2", lobby.name(), game.id()));
             team2.remove(&member1.user.id);
             team2.insert(member2.user.id);
+            if let Some(role2) = role2 {
+                ctx.remove_guild_member_role(guild_id, member1.user.id, role2.id)?;
+                ctx.add_guild_member_role(guild_id, member2.user.id, role2.id)?;
+            }
             if team1.contains(&member2.user.id) {
+                let role1 = roles
+                    .iter()
+                    .find(|x| x.name == format!("{} Game {} Team 1", lobby.name(), game.id()));
                 team1.remove(&member2.user.id);
                 team1.insert(member1.user.id);
+                if let Some(role1) = role1 {
+                    ctx.remove_guild_member_role(guild_id, member2.user.id, role1.id)?;
+                    ctx.add_guild_member_role(guild_id, member1.user.id, role1.id)?;
+                }
             }
         }
     } else {
@@ -1028,8 +1161,52 @@ pub fn swap(
         team2.into_iter().collect::<Vec<_>>(),
     ]);
     database.update_game(&game, msg.channel_id)?;
+    let f = |users: &[UserId]| {
+        users
+            .iter()
+            .map(|x| x.mention())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let ratings = lobby.ratings();
+    let quality = utils::quality(
+        &[
+            game.teams()[0]
+                .iter()
+                .map(|x| {
+                    (
+                        (),
+                        ratings
+                            .get(x)
+                            .map(|x| x.rating)
+                            .unwrap_or_else(|| trueskill.create_rating()),
+                    )
+                })
+                .collect(),
+            game.teams()[1]
+                .iter()
+                .map(|x| {
+                    (
+                        (),
+                        ratings
+                            .get(x)
+                            .map(|x| x.rating)
+                            .unwrap_or_else(|| trueskill.create_rating()),
+                    )
+                })
+                .collect(),
+        ],
+        trueskill,
+    );
+    let title = format!("Game {}", game.id());
+    let description = format!(
+        "Quality: {:.0}\n\nTeam 1:\n{}\n\nTeam 2:\n{}",
+        100.0 * quality,
+        f(game.teams()[0]),
+        f(game.teams()[1])
+    );
     ctx.send_message(msg.channel_id, |m| {
-        m.embed(|e| e.description("Players swapped"))
+        m.embed(|e| e.description(description).title(title))
     })?;
     Ok(())
 }

@@ -357,7 +357,14 @@ pub fn leaderboard(
         checks::has_role(ctx, guild_id, user_id, roles.ranked)
     })?;
     let pages = leaderboard.len();
-    let (title, description) = &leaderboard[page.max(1).min(pages) - 1];
+    let page = page.max(1).min(pages);
+    if page == 0 {
+        ctx.send_message(msg.channel_id, |m| {
+            m.embed(|e| e.description("No leaderboard yet."))
+        })?;
+        return Ok(());
+    }
+    let (title, description) = &leaderboard[page - 1];
     ctx.send_message(msg.channel_id, |m| {
         m.embed(|e| e.description(description).title(title))
     })?;
@@ -399,7 +406,14 @@ pub fn lball(
 
     let leaderboard = utils::leaderboard(lobby, 15, ranks, |_| Ok(true))?;
     let pages = leaderboard.len();
-    let (title, description) = &leaderboard[page.min(pages) - 1];
+    let page = page.max(1).min(pages);
+    if page == 0 {
+        ctx.send_message(msg.channel_id, |m| {
+            m.embed(|e| e.description("No leaderboard yet."))
+        })?;
+        return Ok(());
+    }
+    let (title, description) = &leaderboard[page - 1];
     ctx.send_message(msg.channel_id, |m| {
         m.embed(|e| e.description(description).title(title))
     })?;

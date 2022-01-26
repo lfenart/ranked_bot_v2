@@ -102,3 +102,12 @@ where
     ratings.sort_by(|a, b| s(&a.1, &b.1));
     Ok(ratings)
 }
+
+pub fn get_rank(ranks: &[Rank], rating: f64) -> &Rank {
+    for rank in ranks {
+        if rank.limit > rating {
+            return rank;
+        }
+    }
+    ranks.last().unwrap()
+}
