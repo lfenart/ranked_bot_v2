@@ -4,7 +4,9 @@ use chrono::{DateTime, Utc};
 use harmony::client::Context;
 use harmony::model::id::{ChannelId, GuildId, UserId};
 use harmony::model::{Member, Message};
-use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
+use rayon::iter::{
+    IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
+};
 use trueskill::SimpleTrueSkill;
 
 use crate::checks;
@@ -705,8 +707,8 @@ pub fn score(
         s.spawn(|_| {
             let f = |users: &[UserId], old_ratings: &[f64], new_ratings: &[f64]| {
                 users
-                    .iter()
-                    .zip(old_ratings.iter().zip(new_ratings.iter()))
+                    .par_iter()
+                    .zip(old_ratings.par_iter().zip(new_ratings.par_iter()))
                     .map(|(x, (old, new))| {
                         let old_rank = utils::get_rank(ranks, *old);
                         let new_rank = utils::get_rank(ranks, *new);

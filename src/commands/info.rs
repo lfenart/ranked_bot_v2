@@ -12,7 +12,16 @@ use crate::model::{Database, Lobbies, PlayerInfo, Score};
 use crate::utils;
 use crate::{Error, Result};
 
-pub fn info(ctx: &Context, msg: &Message, lobbies: &Lobbies, args: &[String]) -> Result {
+pub fn info(
+    ctx: &Context,
+    msg: &Message,
+    lobbies: &Lobbies,
+    infos: &[ChannelId],
+    args: &[String],
+) -> Result {
+    if !infos.contains(&msg.channel_id) {
+        return Ok(());
+    }
     if args.is_empty() {
         return Err(Error::NotEnoughArguments);
     }
@@ -90,6 +99,7 @@ fn info_internal(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn history(
     ctx: &Context,
     msg: &Message,
@@ -97,8 +107,12 @@ pub fn history(
     lobbies: &Lobbies,
     database: &Database,
     trueskill: SimpleTrueSkill,
+    infos: &[ChannelId],
     args: &[String],
 ) -> Result {
+    if !infos.contains(&msg.channel_id) {
+        return Ok(());
+    }
     if args.is_empty() {
         return Err(Error::NotEnoughArguments);
     }

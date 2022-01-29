@@ -16,6 +16,7 @@ use std::time::Duration;
 use chrono::Utc;
 use harmony::client::{ClientBuilder, Context};
 use harmony::gateway::{Intents, Ready};
+use harmony::model::id::ChannelId;
 use harmony::model::Message;
 use parking_lot::RwLock;
 use trueskill::SimpleTrueSkill;
@@ -82,6 +83,7 @@ fn message_create(
     prefix: &str,
     roles: &Roles,
     ranks: &[Rank],
+    infos: &[ChannelId],
     lobbies: Arc<RwLock<Lobbies>>,
     trueskill: &mut SimpleTrueSkill,
     database: &Database,
@@ -185,7 +187,7 @@ fn message_create(
                     ranks,
                     &args,
                 ),
-                "info" => commands::info(&ctx, &msg, &lobbies.read(), &args),
+                "info" => commands::info(&ctx, &msg, &lobbies.read(), infos, &args),
                 "forceinfo" => commands::forceinfo(&ctx, &msg, roles, &lobbies.read(), &args),
                 "history" => commands::history(
                     &ctx,
@@ -194,6 +196,7 @@ fn message_create(
                     &lobbies.read(),
                     database,
                     *trueskill,
+                    infos,
                     &args,
                 ),
                 "forcehistory" => commands::forcehistory(
@@ -256,6 +259,7 @@ fn main() {
     let prefix = config.prefix;
     let roles = config.roles;
     let ranks = config.ranks;
+    let infos = config.infos;
     let client = ClientBuilder::new()
         .with_bot_token(&token)
         .intents(Intents::GUILD_MESSAGES | Intents::DIRECT_MESSAGES)
@@ -267,6 +271,7 @@ fn main() {
                 &prefix,
                 &roles,
                 &ranks,
+                &infos,
                 lobbies.clone(),
                 &mut trueskill,
                 &database,
