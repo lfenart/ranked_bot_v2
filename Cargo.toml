@@ -7,13 +7,13 @@ edition = "2021"
 
 [dependencies]
 chrono = { version = "0.4", default-features = false }
-harmony = { git = "https://github.com/lfenart/harmony", rev = "c66cbe9", default-features = false, features = ["rustls"] }
+harmony = { git = "https://github.com/lfenart/harmony", rev = "0c66a99", default-features = false, features = ["rustls"] }
 inline-python = { version = "0.8", default-features = false }
 itertools = { version = "0.10", default-features = false, features = ["use_alloc"] }
-parking_lot = { version = "0.11", default-features = false }
+parking_lot = { version = "0.12", default-features = false }
 rayon = { version = "1", default-features = false }
 rusqlite = { version = "0.26", default-features = false, features = ["bundled"] }
-serde = { version = "1.0", default-features = false }
-serde_json = { version = "1.0", default-features = false }
+serde = { version = "1", default-features = false }
+serde_json = { version = "1", default-features = false }
 serde_repr = { version = "0.1", default-features = false }
 trueskill = { git = "https://github.com/lfenart/trueskill", rev = "dee2096", default-features = false, features = ["serde"] }

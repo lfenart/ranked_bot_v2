@@ -15,9 +15,9 @@ use std::time::Duration;
 
 use chrono::Utc;
 use harmony::client::{ClientBuilder, Context};
-use harmony::gateway::{Intents, Ready};
+use harmony::gateway::{Intents, Ready, Status};
 use harmony::model::id::ChannelId;
-use harmony::model::Message;
+use harmony::model::{Activity, Message};
 use parking_lot::RwLock;
 use trueskill::SimpleTrueSkill;
 
@@ -37,6 +37,11 @@ fn parse_command(msg: &str) -> Option<(String, Vec<String>)> {
 
 fn ready(ctx: Context, _: Ready, lobbies: Arc<RwLock<Lobbies>>, timeout: i64) {
     println!("Bot started");
+    ctx.presence_update(
+        Status::Online,
+        Some(Activity::playing("Star Wars Battlefront II")),
+    )
+    .ok();
     thread::spawn(move || {
         let timeout = chrono::Duration::minutes(timeout);
         loop {
@@ -90,7 +95,7 @@ fn message_create(
 ) {
     if let Some(content) = msg.content.strip_prefix(prefix) {
         if let Some((command, args)) = parse_command(content) {
-            let result = match command.as_str() {
+            let result = match command.as_str().to_lowercase().as_str() {
                 "ping" => commands::ping(&ctx, &msg),
                 "join" | "j" => commands::join(
                     &ctx,
