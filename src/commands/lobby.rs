@@ -7,8 +7,10 @@ use harmony::model::{Member, Message};
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
 };
+use serde_json::json;
 use trueskill::SimpleTrueSkill;
 
+use crate::bridge::{GameStarted, OpCode};
 use crate::checks;
 use crate::config::{Rank, Roles};
 use crate::model::{Database, Game, Lobbies, Ratings, Score};
@@ -22,6 +24,7 @@ pub fn join(
     lobbies: &mut Lobbies,
     trueskill: SimpleTrueSkill,
     database: &Database,
+    bridge: ChannelId,
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
     if checks::has_role(ctx, guild_id, msg.author.id, roles.banned)? {
@@ -31,6 +34,7 @@ pub fn join(
         ctx,
         guild_id,
         msg.channel_id,
+        bridge,
         msg.author.id,
         msg.timestamp,
         false,
@@ -40,6 +44,7 @@ pub fn join(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn forcejoin(
     ctx: &Context,
     msg: &Message,
@@ -47,6 +52,7 @@ pub fn forcejoin(
     lobbies: &mut Lobbies,
     trueskill: SimpleTrueSkill,
     database: &Database,
+    bridge: ChannelId,
     args: &[String],
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
@@ -66,6 +72,7 @@ pub fn forcejoin(
             ctx,
             guild_id,
             msg.channel_id,
+            bridge,
             member.user.id,
             msg.timestamp,
             true,
@@ -82,6 +89,7 @@ fn join_internal(
     ctx: &Context,
     guild_id: GuildId,
     channel_id: ChannelId,
+    bridge: ChannelId,
     user_id: UserId,
     timestamp: DateTime<Utc>,
     force: bool,
@@ -106,7 +114,7 @@ fn join_internal(
     if lobby.len() == lobby.capacity() {
         let players = lobby.clear().into_keys().collect();
         start_game(
-            ctx, guild_id, channel_id, lobbies, players, trueskill, database,
+            ctx, guild_id, channel_id, bridge, lobbies, players, trueskill, database,
         )?;
     }
     Ok(())
@@ -118,12 +126,14 @@ pub fn leave(
     lobbies: &mut Lobbies,
     trueskill: SimpleTrueSkill,
     database: &Database,
+    bridge: ChannelId,
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
     leave_internal(
         ctx,
         guild_id,
         msg.channel_id,
+        bridge,
         msg.author.id,
         false,
         lobbies,
@@ -132,6 +142,7 @@ pub fn leave(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn forceleave(
     ctx: &Context,
     msg: &Message,
@@ -139,6 +150,7 @@ pub fn forceleave(
     lobbies: &mut Lobbies,
     trueskill: SimpleTrueSkill,
     database: &Database,
+    bridge: ChannelId,
     args: &[String],
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
@@ -158,6 +170,7 @@ pub fn forceleave(
             ctx,
             guild_id,
             msg.channel_id,
+            bridge,
             member.user.id,
             true,
             lobbies,
@@ -173,6 +186,7 @@ fn leave_internal(
     ctx: &Context,
     guild_id: GuildId,
     channel_id: ChannelId,
+    bridge: ChannelId,
     user_id: UserId,
     force: bool,
     lobbies: &mut Lobbies,
@@ -202,12 +216,13 @@ fn leave_internal(
     };
     if let Some(players) = players {
         start_game(
-            ctx, guild_id, channel_id, lobbies, players, trueskill, database,
+            ctx, guild_id, channel_id, bridge, lobbies, players, trueskill, database,
         )?;
     }
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn players(
     ctx: &Context,
     msg: &Message,
@@ -215,6 +230,7 @@ pub fn players(
     lobbies: &mut Lobbies,
     trueskill: SimpleTrueSkill,
     database: &Database,
+    bridge: ChannelId,
     args: &[String],
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
@@ -244,6 +260,7 @@ pub fn players(
             ctx,
             guild_id,
             msg.channel_id,
+            bridge,
             lobbies,
             players,
             trueskill,
@@ -258,6 +275,7 @@ fn start_game(
     ctx: &Context,
     guild_id: GuildId,
     channel_id: ChannelId,
+    bridge: ChannelId,
     lobbies: &mut Lobbies,
     players: Vec<UserId>,
     trueskill: SimpleTrueSkill,
@@ -396,6 +414,24 @@ fn start_game(
                 });
                 Result::Ok(())
             })() {
+                eprintln!("Err: {:?}", err);
+            }
+        });
+        // Send "GAME_STARTED" message to bridge
+        s.spawn(|_| {
+            let bridge_event = GameStarted {
+                players: game.teams()[0]
+                    .iter()
+                    .copied()
+                    .chain(game.teams()[1].iter().copied())
+                    .collect(),
+            };
+            if let Err(err) = ctx.send_message(bridge, |m| {
+                m.content(json!({
+                    "t": OpCode::GameStarted,
+                    "d": bridge_event,
+                }))
+            }) {
                 eprintln!("Err: {:?}", err);
             }
         });

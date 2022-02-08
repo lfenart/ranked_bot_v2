@@ -1,3 +1,4 @@
+mod bridge;
 mod checks;
 mod commands;
 mod config;
@@ -16,11 +17,12 @@ use std::time::Duration;
 use chrono::Utc;
 use harmony::client::{ClientBuilder, Context};
 use harmony::gateway::{Intents, Ready, Status};
-use harmony::model::id::ChannelId;
+use harmony::model::id::{ChannelId, UserId};
 use harmony::model::{Activity, Message};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use trueskill::SimpleTrueSkill;
 
+use bridge::BridgeEvent;
 use config::{Config, Rank, Roles};
 pub use error::Error;
 use model::{Database, Lobbies, Lobby, Ratings};
@@ -35,7 +37,7 @@ fn parse_command(msg: &str) -> Option<(String, Vec<String>)> {
     Some((command, it.collect()))
 }
 
-fn ready(ctx: Context, _: Ready, lobbies: Arc<RwLock<Lobbies>>, timeout: i64) {
+fn ready(ctx: Context, ready: Ready, lobbies: Arc<RwLock<Lobbies>>, timeout: i64) -> UserId {
     println!("Bot started");
     ctx.presence_update(
         Status::Online,
@@ -79,6 +81,7 @@ fn ready(ctx: Context, _: Ready, lobbies: Arc<RwLock<Lobbies>>, timeout: i64) {
             }
         }
     });
+    ready.user.id
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -86,13 +89,50 @@ fn message_create(
     ctx: Context,
     msg: Message,
     prefix: &str,
+    bot_user_id: &Mutex<UserId>,
     roles: &Roles,
     ranks: &[Rank],
     infos: &[ChannelId],
     lobbies: Arc<RwLock<Lobbies>>,
+    bridge: ChannelId,
     trueskill: &mut SimpleTrueSkill,
     database: &Database,
 ) {
+    if msg.channel_id == bridge {
+        if msg.author.id == *bot_user_id.lock() {
+            return;
+        }
+        let bridge_event: BridgeEvent = match serde_json::from_str(&msg.content) {
+            Ok(bridge_event) => bridge_event,
+            Err(err) => {
+                eprintln!("Err: {:?}", err);
+                return;
+            }
+        };
+        match bridge_event {
+            BridgeEvent::GameStarted(game_started) => {
+                for (channel_id, lobby) in lobbies.write().iter_mut() {
+                    for &user_id in game_started.players.iter() {
+                        if lobby.leave(user_id, true).is_ok() {
+                            if let Err(err) = ctx.send_message(*channel_id, |m| {
+                                m.embed(|e| {
+                                    e.description(format!(
+                                        "[{}/{}] {} left the queue (Game started).",
+                                        lobby.len(),
+                                        lobby.capacity(),
+                                        user_id.mention(),
+                                    ))
+                                })
+                            }) {
+                                eprintln!("Err: {:?}", err);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return;
+    }
     if let Some(content) = msg.content.strip_prefix(prefix) {
         if let Some((command, args)) = parse_command(content) {
             let result = match command.as_str().to_lowercase().as_str() {
@@ -104,6 +144,7 @@ fn message_create(
                     &mut lobbies.write(),
                     *trueskill,
                     database,
+                    bridge,
                 ),
                 "forcejoin" | "forcej" | "forceadd" => commands::forcejoin(
                     &ctx,
@@ -112,11 +153,17 @@ fn message_create(
                     &mut lobbies.write(),
                     *trueskill,
                     database,
+                    bridge,
                     &args,
                 ),
-                "leave" | "l" => {
-                    commands::leave(&ctx, &msg, &mut lobbies.write(), *trueskill, database)
-                }
+                "leave" | "l" => commands::leave(
+                    &ctx,
+                    &msg,
+                    &mut lobbies.write(),
+                    *trueskill,
+                    database,
+                    bridge,
+                ),
                 "forceleave" | "forcel" | "forceremove" => commands::forceleave(
                     &ctx,
                     &msg,
@@ -124,6 +171,7 @@ fn message_create(
                     &mut lobbies.write(),
                     *trueskill,
                     database,
+                    bridge,
                     &args,
                 ),
                 "players" => commands::players(
@@ -133,6 +181,7 @@ fn message_create(
                     &mut lobbies.write(),
                     *trueskill,
                     database,
+                    bridge,
                     &args,
                 ),
                 "freeze" => commands::freeze(&ctx, &msg, roles, &mut lobbies.write()),
@@ -265,19 +314,23 @@ fn main() {
     let roles = config.roles;
     let ranks = config.ranks;
     let infos = config.infos;
+    let bridge = config.bridge;
+    let bot_user_id = Mutex::new(0.into());
     let client = ClientBuilder::new()
         .with_bot_token(&token)
         .intents(Intents::GUILD_MESSAGES | Intents::DIRECT_MESSAGES)
-        .on_ready(|ctx, rdy| ready(ctx, rdy, lobbies.clone(), config.timeout))
+        .on_ready(|ctx, rdy| *bot_user_id.lock() = ready(ctx, rdy, lobbies.clone(), config.timeout))
         .on_message_create(|ctx, msg| {
             message_create(
                 ctx,
                 msg,
                 &prefix,
+                &bot_user_id,
                 &roles,
                 &ranks,
                 &infos,
                 lobbies.clone(),
+                bridge,
                 &mut trueskill,
                 &database,
             )

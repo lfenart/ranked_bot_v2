@@ -67,5 +67,6 @@
             "limit": 8000,
             "color": "red"
         }
-    ]
+    ],
+    "bridge": 0
 }

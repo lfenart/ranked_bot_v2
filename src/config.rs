@@ -12,6 +12,7 @@ pub struct Config {
     pub ranks: Vec<Rank>,
     pub database: String,
     pub timeout: i64,
+    pub bridge: ChannelId,
 }
 
 #[derive(Deserialize)]
