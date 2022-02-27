@@ -743,6 +743,7 @@ dependencies = [
  "inline-python",
  "itertools",
  "parking_lot 0.12.0",
+ "rand",
  "rayon",
  "rusqlite",
  "serde",
