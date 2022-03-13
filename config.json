@@ -35,7 +35,10 @@
         731269742870003764
     ],
     "database": "./db.db",
-    "timeout": 90,
+    "timeout": {
+        "default": 90,
+        "maximum": 180
+    },
     "ranks": [
         {
             "id": 0,

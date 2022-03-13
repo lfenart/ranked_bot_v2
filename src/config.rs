@@ -11,7 +11,7 @@ pub struct Config {
     pub roles: Roles,
     pub ranks: Vec<Rank>,
     pub database: String,
-    pub timeout: i64,
+    pub timeout: Timeout,
     pub bridge: ChannelId,
 }
 
@@ -42,4 +42,10 @@ pub struct Rank {
 pub struct Webhook {
     pub id: WebhookId,
     pub token: String,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+pub struct Timeout {
+    pub default: u64,
+    pub maximum: u64,
 }

@@ -106,6 +106,10 @@ impl Lobby {
         &self.queue
     }
 
+    pub fn queue_mut(&mut self) -> &mut HashMap<UserId, DateTime<Utc>> {
+        &mut self.queue
+    }
+
     pub fn clear(&mut self) -> HashMap<UserId, DateTime<Utc>> {
         mem::take(&mut self.queue)
     }

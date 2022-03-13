@@ -23,7 +23,7 @@ use parking_lot::{Mutex, RwLock};
 use trueskill::SimpleTrueSkill;
 
 use bridge::BridgeEvent;
-use config::{Config, Rank, Roles};
+use config::{Config, Rank, Roles, Timeout};
 pub use error::Error;
 use model::{Database, Lobbies, Lobby, Ratings};
 
@@ -37,46 +37,43 @@ fn parse_command(msg: &str) -> Option<(String, Vec<String>)> {
     Some((command, it.collect()))
 }
 
-fn ready(ctx: Context, ready: Ready, lobbies: Arc<RwLock<Lobbies>>, timeout: i64) -> UserId {
+fn ready(ctx: Context, ready: Ready, lobbies: Arc<RwLock<Lobbies>>) -> UserId {
     println!("Bot started");
     ctx.presence_update(
         Status::Online,
         Some(Activity::playing("Star Wars Battlefront II")),
     )
     .ok();
-    thread::spawn(move || {
-        let timeout = chrono::Duration::minutes(timeout);
-        loop {
-            thread::sleep(REFRESH_DELAY);
-            {
-                let mut lobbies = lobbies.write();
-                let limit = Utc::now() - timeout;
-                for (&channel_id, lobby) in lobbies.iter_mut() {
-                    let users = lobby
-                        .queue()
-                        .iter()
-                        .filter_map(|(&user_id, &date_time)| {
-                            if limit >= date_time {
-                                Some(user_id)
-                            } else {
-                                None
-                            }
+    thread::spawn(move || loop {
+        thread::sleep(REFRESH_DELAY);
+        {
+            let mut lobbies = lobbies.write();
+            let now = Utc::now();
+            for (&channel_id, lobby) in lobbies.iter_mut() {
+                let users = lobby
+                    .queue()
+                    .iter()
+                    .filter_map(|(&user_id, &date_time)| {
+                        if now >= date_time {
+                            Some(user_id)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                for user_id in users {
+                    lobby.leave(user_id, true).ok();
+                    ctx.send_message(channel_id, |m| {
+                        m.content(user_id.mention()).embed(|e| {
+                            e.description(format!(
+                                "[{}/{}] {} left the queue (Timeout).",
+                                lobby.len(),
+                                lobby.capacity(),
+                                user_id.mention()
+                            ))
                         })
-                        .collect::<Vec<_>>();
-                    for user_id in users {
-                        lobby.leave(user_id, true).ok();
-                        ctx.send_message(channel_id, |m| {
-                            m.content(user_id.mention()).embed(|e| {
-                                e.description(format!(
-                                    "[{}/{}] {} left the queue (Timeout).",
-                                    lobby.len(),
-                                    lobby.capacity(),
-                                    user_id.mention()
-                                ))
-                            })
-                        })
-                        .ok();
-                    }
+                    })
+                    .ok();
                 }
             }
         }
@@ -97,6 +94,7 @@ fn message_create(
     bridge: ChannelId,
     trueskill: &mut SimpleTrueSkill,
     database: &Database,
+    timeout: Timeout,
 ) {
     if msg.channel_id == bridge {
         if msg.author.id == *bot_user_id.lock() {
@@ -145,6 +143,7 @@ fn message_create(
                     *trueskill,
                     database,
                     bridge,
+                    timeout.default,
                 ),
                 "forcejoin" | "forcej" | "forceadd" => commands::forcejoin(
                     &ctx,
@@ -154,6 +153,7 @@ fn message_create(
                     *trueskill,
                     database,
                     bridge,
+                    timeout.default,
                     &args,
                 ),
                 "leave" | "l" => commands::leave(
@@ -267,6 +267,9 @@ fn message_create(
                     commands::leaderboard(&ctx, &msg, roles, &lobbies.read(), ranks, &args)
                 }
                 "lball" => commands::lball(&ctx, &msg, roles, &lobbies.read(), ranks, &args),
+                "expire" => {
+                    commands::expire(&ctx, &msg, &mut lobbies.write(), timeout.maximum, &args)
+                }
                 _ => return,
             };
             if let Err(err) = result {
@@ -319,7 +322,7 @@ fn main() {
     let client = ClientBuilder::new()
         .with_bot_token(&token)
         .intents(Intents::GUILD_MESSAGES | Intents::DIRECT_MESSAGES)
-        .on_ready(|ctx, rdy| *bot_user_id.lock() = ready(ctx, rdy, lobbies.clone(), config.timeout))
+        .on_ready(|ctx, rdy| *bot_user_id.lock() = ready(ctx, rdy, lobbies.clone()))
         .on_message_create(|ctx, msg| {
             message_create(
                 ctx,
@@ -333,6 +336,7 @@ fn main() {
                 bridge,
                 &mut trueskill,
                 &database,
+                config.timeout,
             )
         })
         .build();

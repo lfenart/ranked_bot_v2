@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use harmony::client::Context;
 use harmony::model::id::{ChannelId, GuildId, UserId};
 use harmony::model::{Member, Message};
@@ -13,10 +13,11 @@ use trueskill::SimpleTrueSkill;
 use crate::bridge::{GameStarted, OpCode};
 use crate::checks;
 use crate::config::{Rank, Roles};
-use crate::model::{Database, Game, Lobbies, Ratings, Score};
+use crate::model::{Database, Game, Lobbies, LobbyError, Ratings, Score};
 use crate::utils;
 use crate::{Error, Result};
 
+#[allow(clippy::too_many_arguments)]
 pub fn join(
     ctx: &Context,
     msg: &Message,
@@ -25,6 +26,7 @@ pub fn join(
     trueskill: SimpleTrueSkill,
     database: &Database,
     bridge: ChannelId,
+    timeout: u64,
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
     if checks::has_role(ctx, guild_id, msg.author.id, roles.banned)? {
@@ -36,7 +38,7 @@ pub fn join(
         msg.channel_id,
         bridge,
         msg.author.id,
-        msg.timestamp,
+        msg.timestamp + Duration::minutes(timeout as i64),
         false,
         lobbies,
         trueskill,
@@ -53,6 +55,7 @@ pub fn forcejoin(
     trueskill: SimpleTrueSkill,
     database: &Database,
     bridge: ChannelId,
+    timeout: u64,
     args: &[String],
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
@@ -74,7 +77,7 @@ pub fn forcejoin(
             msg.channel_id,
             bridge,
             member.user.id,
-            msg.timestamp,
+            msg.timestamp + Duration::minutes(timeout as i64),
             true,
             lobbies,
             trueskill,
@@ -1113,6 +1116,9 @@ pub fn swap(
     } else {
         return Err(Error::NotALobby(msg.channel_id));
     };
+    if args.len() < 2 {
+        return Err(Error::NotEnoughArguments);
+    }
     let member1 = if let Some(member) = Member::parse(ctx, guild_id, &args[0])? {
         member
     } else {
@@ -1308,6 +1314,56 @@ pub fn setrating(
     }
     ctx.send_message(msg.channel_id, |m| {
         m.embed(|e| e.description(format!("Initial rating set to {}", rating)))
+    })?;
+    Ok(())
+}
+
+pub fn expire(
+    ctx: &Context,
+    msg: &Message,
+    lobbies: &mut Lobbies,
+    timeout: u64,
+    args: &[String],
+) -> Result {
+    let lobby = if let Some(lobby) = lobbies.get_mut(&msg.channel_id) {
+        lobby
+    } else {
+        return Err(Error::NotALobby(msg.channel_id));
+    };
+    let date_time = if let Some(date_time) = lobby.queue_mut().get_mut(&msg.author.id) {
+        date_time
+    } else {
+        return Err(Error::Lobby(LobbyError::NotInQueue(msg.author.id)));
+    };
+    if args.is_empty() {
+        return Err(Error::NotEnoughArguments);
+    }
+    let offset = if let Some(pos) = args[0].find(&['h', ':'] as &[_]) {
+        let hours: i64 = if pos == 0 { 0 } else { args[0][..pos].parse()? };
+        let minutes = match &args[0][pos + 1..] {
+            "" => 0,
+            x => x.parse()?,
+        };
+        60 * hours + minutes
+    } else {
+        args[0].parse()?
+    };
+    let offset = if offset > timeout as i64 {
+        timeout as i64
+    } else if offset < 1 {
+        1
+    } else {
+        offset
+    };
+    *date_time = Utc::now() + Duration::minutes(offset);
+    ctx.send_message(msg.channel_id, |m| {
+        m.embed(|e| {
+            e.description(format!(
+                "Your queue will expire in **{}h{}m**",
+                offset / 60,
+                offset % 60
+            ))
+        })
     })?;
     Ok(())
 }
