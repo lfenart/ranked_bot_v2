@@ -11,7 +11,7 @@ pub fn has_role(
     role_id: RoleId,
 ) -> Result<bool> {
     Ok(ctx
-        .member(guild_id, user_id)?
+        .get_guild_member(guild_id, user_id)?
         .map(|x| x.roles.contains(&role_id))
         .unwrap_or_default())
 }

@@ -218,7 +218,7 @@ dependencies = [
 [[package]]
 name = "harmony"
 version = "0.1.0"
-source = "git+https://github.com/lfenart/harmony?rev=0c66a99#0c66a993df939df92aaba08ead2086c80a5c2464"
+source = "git+https://github.com/lfenart/harmony?rev=dda268a#dda268afc42dee1d7f063851290c83ed49e6e9f0"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -365,9 +365,9 @@ checksum = "c7d73b3f436185384286bd8098d17ec07c9a7d2388a6599f824d8502b529702a"
 
 [[package]]
 name = "libsqlite3-sys"
-version = "0.23.1"
+version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abd5850c449b40bacb498b2bbdfaff648b1b055630073ba8db499caf2d0ea9f2"
+checksum = "898745e570c7d0453cc1fbc4a701eb6c662ed54e8fec8b7d14be137ebeeb9d14"
 dependencies = [
  "cc",
  "pkg-config",
@@ -818,9 +818,9 @@ dependencies = [
 
 [[package]]
 name = "rusqlite"
-version = "0.26.1"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a82b0b91fad72160c56bf8da7a549b25d7c31109f52cc1437eac4c0ad2550a7"
+checksum = "85127183a999f7db96d1a976a309eebbfb6ea3b0b400ddd8340190129de6eb7a"
 dependencies = [
  "bitflags",
  "fallible-iterator",

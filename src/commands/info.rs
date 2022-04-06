@@ -74,7 +74,7 @@ fn info_internal(
 ) -> Result {
     let lobby = lobbies.get(&channel).ok_or(Error::NotALobby(channel))?;
     if let Some(player_info) = lobby.ratings().get(&member_id) {
-        ctx.send_message(msg.channel_id, |m| {
+        ctx.create_message(msg.channel_id, |m| {
             m.embed(|e| {
                 e.description(format!(
                     "{}\nRating: {:.0} ± {:.0}\nWins: {}\nLosses: {}\nDraws: {}",
@@ -89,7 +89,7 @@ fn info_internal(
             })
         })?;
     } else {
-        ctx.send_message(msg.channel_id, |m| {
+        ctx.create_message(msg.channel_id, |m| {
             m.embed(|e| {
                 e.description(format!("{}\nNo info yet, play more!", member_id.mention()))
                     .title("Info")
@@ -367,19 +367,27 @@ pub fn leaderboard(
     } else {
         return Err(Error::NotALobby(channel_id));
     };
+    let members_roles = ctx
+        .list_guild_members(guild_id)?
+        .into_iter()
+        .map(|x| (x.user.id, x.roles))
+        .collect::<HashMap<_, _>>();
     let leaderboard = utils::leaderboard(lobby, 15, ranks, |user_id| {
-        checks::has_role(ctx, guild_id, user_id, roles.ranked)
+        Ok(members_roles
+            .get(&user_id)
+            .map(|x| x.contains(&roles.ranked))
+            .unwrap_or(false))
     })?;
     let pages = leaderboard.len();
     let page = page.max(1).min(pages);
     if page == 0 {
-        ctx.send_message(msg.channel_id, |m| {
+        ctx.create_message(msg.channel_id, |m| {
             m.embed(|e| e.description("No leaderboard yet."))
         })?;
         return Ok(());
     }
     let (title, description) = &leaderboard[page - 1];
-    ctx.send_message(msg.channel_id, |m| {
+    ctx.create_message(msg.channel_id, |m| {
         m.embed(|e| e.description(description).title(title))
     })?;
     Ok(())
@@ -422,13 +430,13 @@ pub fn lball(
     let pages = leaderboard.len();
     let page = page.max(1).min(pages);
     if page == 0 {
-        ctx.send_message(msg.channel_id, |m| {
+        ctx.create_message(msg.channel_id, |m| {
             m.embed(|e| e.description("No leaderboard yet."))
         })?;
         return Ok(());
     }
     let (title, description) = &leaderboard[page - 1];
-    ctx.send_message(msg.channel_id, |m| {
+    ctx.create_message(msg.channel_id, |m| {
         m.embed(|e| e.description(description).title(title))
     })?;
     Ok(())

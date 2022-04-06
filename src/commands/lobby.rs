@@ -1,11 +1,12 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Duration, Utc};
 use harmony::client::Context;
 use harmony::model::id::{ChannelId, GuildId, UserId};
 use harmony::model::{Member, Message};
 use rayon::iter::{
-    IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator,
+    IntoParallelRefMutIterator, ParallelIterator,
 };
 use serde_json::json;
 use trueskill::SimpleTrueSkill;
@@ -104,7 +105,7 @@ fn join_internal(
         .get_mut(&channel_id)
         .ok_or(Error::NotALobby(channel_id))?;
     lobby.join(user_id, timestamp, force)?;
-    ctx.send_message(channel_id, |m| {
+    ctx.create_message(channel_id, |m| {
         m.embed(|e| {
             e.description(format!(
                 "[{}/{}] {} joined the queue.",
@@ -201,7 +202,7 @@ fn leave_internal(
             .get_mut(&channel_id)
             .ok_or(Error::NotALobby(channel_id))?;
         lobby.leave(user_id, force)?;
-        ctx.send_message(channel_id, |m| {
+        ctx.create_message(channel_id, |m| {
             m.embed(|e| {
                 e.description(format!(
                     "[{}/{}] {} left the queue.",
@@ -249,7 +250,7 @@ pub fn players(
             .ok_or(Error::NotALobby(msg.channel_id))?;
         let x = args[0].parse::<usize>()?;
         lobby.set_capacity(2 * x);
-        ctx.send_message(msg.channel_id, |m| {
+        ctx.create_message(msg.channel_id, |m| {
             m.embed(|e| e.description(format!("Players per team set to {}.", x)))
         })?;
         if lobby.len() == lobby.capacity() {
@@ -329,33 +330,29 @@ fn start_game(
                 .map(|(x, _)| x.mention())
                 .collect::<Vec<_>>()
                 .join(" ");
-            let message = match ctx.send_message(channel_id, |m| {
+            if let Err(err) = ctx.create_message(channel_id, |m| {
                 m.content(content).embed(|e| {
                     e.title(title)
                         .description(description)
                         .timestamp(game.datetime())
                 })
             }) {
-                Ok(message) => message,
-                Err(err) => {
+                eprintln!("Err: {:?}", err);
+            }
+        });
+        // Send DM
+        s.spawn(|_| {
+            teams.par_iter().flatten().for_each(|(user_id, _)| {
+                if let Err(err) = (|| {
+                    let channel = ctx.create_dm(*user_id)?;
+                    ctx.create_message(channel.id, |m| {
+                        m.content(format!("Game started: {}", channel_id.mention()))
+                    })?;
+                    Result::Ok(())
+                })() {
                     eprintln!("Err: {:?}", err);
-                    return;
                 }
-            };
-            teams[0]
-                .par_iter()
-                .chain(teams[1].par_iter())
-                .for_each(|(user_id, _)| {
-                    if let Err(err) = (|| {
-                        let channel = ctx.create_dm(*user_id)?;
-                        ctx.send_message(channel.id, |m| {
-                            m.content(format!("Game started: {}", message.channel_id.mention()))
-                        })?;
-                        Result::Ok(())
-                    })() {
-                        eprintln!("Err: {:?}", err);
-                    }
-                });
+            });
         });
         // Create global game role
         s.spawn(|_| {
@@ -429,7 +426,7 @@ fn start_game(
                     .chain(game.teams()[1].iter().copied())
                     .collect(),
             };
-            if let Err(err) = ctx.send_message(bridge, |m| {
+            if let Err(err) = ctx.create_message(bridge, |m| {
                 m.content(json!({
                     "t": OpCode::GameStarted,
                     "d": bridge_event,
@@ -439,23 +436,25 @@ fn start_game(
             }
         });
         // Remove players from other lobbies
-        lobbies.par_iter_mut().for_each(|(channel_id, lobby)| {
-            for (user_id, _) in players.iter() {
-                if lobby.leave(*user_id, true).is_ok() {
-                    if let Err(err) = ctx.send_message(*channel_id, |m| {
-                        m.embed(|e| {
-                            e.description(format!(
-                                "[{}/{}] {} left the queue (Game started).",
-                                lobby.len(),
-                                lobby.capacity(),
-                                user_id.mention(),
-                            ))
-                        })
-                    }) {
-                        eprintln!("Err: {:?}", err);
+        s.spawn(|_| {
+            lobbies.par_iter_mut().for_each(|(channel_id, lobby)| {
+                for (user_id, _) in players.iter() {
+                    if lobby.leave(*user_id, true).is_ok() {
+                        if let Err(err) = ctx.create_message(*channel_id, |m| {
+                            m.embed(|e| {
+                                e.description(format!(
+                                    "[{}/{}] {} left the queue (Game started).",
+                                    lobby.len(),
+                                    lobby.capacity(),
+                                    user_id.mention(),
+                                ))
+                            })
+                        }) {
+                            eprintln!("Err: {:?}", err);
+                        }
                     }
                 }
-            }
+            });
         });
     });
     Ok(())
@@ -470,7 +469,7 @@ pub fn freeze(ctx: &Context, msg: &Message, roles: &Roles, lobbies: &mut Lobbies
         .get_mut(&msg.channel_id)
         .ok_or(Error::NotALobby(msg.channel_id))?;
     lobby.freeze();
-    ctx.send_message(msg.channel_id, |m| {
+    ctx.create_message(msg.channel_id, |m| {
         m.embed(|e| e.description("Queue frozen."))
     })?;
     Ok(())
@@ -485,7 +484,7 @@ pub fn unfreeze(ctx: &Context, msg: &Message, roles: &Roles, lobbies: &mut Lobbi
         .get_mut(&msg.channel_id)
         .ok_or(Error::NotALobby(msg.channel_id))?;
     lobby.unfreeze();
-    ctx.send_message(msg.channel_id, |m| {
+    ctx.create_message(msg.channel_id, |m| {
         m.embed(|e| e.description("Queue unfrozen."))
     })?;
     Ok(())
@@ -501,7 +500,7 @@ pub fn queue(ctx: &Context, msg: &Message, lobbies: &Lobbies) -> Result {
         .map(|x| x.mention())
         .collect::<Vec<_>>()
         .join("\n");
-    ctx.send_message(msg.channel_id, |m| {
+    ctx.create_message(msg.channel_id, |m| {
         m.embed(|e| {
             e.title(format!("Queue [{}/{}]", lobby.len(), lobby.capacity()))
                 .description(description)
@@ -525,120 +524,151 @@ pub fn score(
     if !checks::has_role(ctx, guild_id, msg.author.id, roles.admin)? {
         return Ok(());
     }
-    let lobby = lobbies
-        .get_mut(&msg.channel_id)
-        .ok_or(Error::NotALobby(msg.channel_id))?;
-    let lobby_name = lobby.name().to_owned();
-    if args.len() < 2 {
-        return Err(Error::NotEnoughArguments);
-    }
-    let game_id = args[0].parse()?;
-    let score = match args[1].to_lowercase().as_ref() {
-        "1" => Score::Team1,
-        "2" => Score::Team2,
-        "draw" | "d" => Score::Draw,
-        _ => return Err(Error::BadArgument),
+    let (webhook, lobby_name, leaderboard, game, score, old_ratings, new_ratings, members_roles) = {
+        let lobby = lobbies
+            .get_mut(&msg.channel_id)
+            .ok_or(Error::NotALobby(msg.channel_id))?;
+        let lobby_name = lobby.name().to_owned();
+        if args.len() < 2 {
+            return Err(Error::NotEnoughArguments);
+        }
+        let game_id = args[0].parse()?;
+        let score = match args[1].to_lowercase().as_ref() {
+            "1" => Score::Team1,
+            "2" => Score::Team2,
+            "draw" | "d" => Score::Draw,
+            _ => return Err(Error::BadArgument),
+        };
+        let mut game = match database.get_game(msg.channel_id.0, game_id) {
+            Ok(game) => game,
+            Err(rusqlite::Error::QueryReturnedNoRows) => return Err(Error::GameNotFound(game_id)),
+            Err(err) => return Err(err.into()),
+        };
+        if game.score() != Score::Undecided {
+            return Err(Error::GameAlreadySet);
+        }
+        game.set_score(score);
+        database.update_game(&game, msg.channel_id)?;
+        let teams = game.teams();
+        let default_rating = trueskill.create_rating();
+        let old_ratings: [Vec<f64>; 2] = [
+            teams[0]
+                .iter()
+                .map(|x| {
+                    lobby
+                        .ratings()
+                        .get(x)
+                        .map(|x| x.rating)
+                        .unwrap_or(default_rating)
+                        .mean()
+                })
+                .collect(),
+            teams[1]
+                .iter()
+                .map(|x| {
+                    lobby
+                        .ratings()
+                        .get(x)
+                        .map(|x| x.rating)
+                        .unwrap_or(default_rating)
+                        .mean()
+                })
+                .collect(),
+        ];
+        let initial_ratings = database.get_initial_ratings()?;
+        let games = database
+            .get_games()?
+            .remove(&msg.channel_id)
+            .unwrap_or_default();
+        let ratings = Ratings::from_games(&games, &initial_ratings, trueskill);
+        lobby.set_ratings(ratings);
+        let new_ratings: [Vec<f64>; 2] = [
+            teams[0]
+                .iter()
+                .map(|x| {
+                    lobby
+                        .ratings()
+                        .get(x)
+                        .map(|x| x.rating)
+                        .unwrap_or(default_rating)
+                        .mean()
+                })
+                .collect(),
+            teams[1]
+                .iter()
+                .map(|x| {
+                    lobby
+                        .ratings()
+                        .get(x)
+                        .map(|x| x.rating)
+                        .unwrap_or(default_rating)
+                        .mean()
+                })
+                .collect(),
+        ];
+        let members = ctx.list_guild_members(guild_id)?;
+        let members_roles = members
+            .into_iter()
+            .map(|x| (x.user.id, x.roles))
+            .collect::<HashMap<_, _>>();
+        let leaderboard = utils::leaderboard(lobby, 15, ranks, |user_id| {
+            Ok(members_roles
+                .get(&user_id)
+                .map(|x| x.contains(&roles.ranked))
+                .unwrap_or(false))
+        })?;
+        let webhook = if let Some(webhook) = lobby.webhook_mut() {
+            let messages = std::mem::take(&mut webhook.2);
+            Some((webhook.0, webhook.1.clone(), messages))
+        } else {
+            None
+        };
+        (
+            webhook,
+            lobby_name,
+            leaderboard,
+            game,
+            score,
+            old_ratings,
+            new_ratings,
+            members_roles,
+        )
     };
-    let mut game = match database.get_game(msg.channel_id.0, game_id) {
-        Ok(game) => game,
-        Err(rusqlite::Error::QueryReturnedNoRows) => return Err(Error::GameNotFound(game_id)),
-        Err(err) => return Err(err.into()),
-    };
-    if game.score() != Score::Undecided {
-        return Err(Error::GameAlreadySet);
-    }
-    game.set_score(score);
-    database.update_game(&game, msg.channel_id)?;
-    let teams = game.teams();
-    let default_rating = trueskill.create_rating();
-    let old_ratings: [Vec<f64>; 2] = [
-        teams[0]
-            .iter()
-            .map(|x| {
-                lobby
-                    .ratings()
-                    .get(x)
-                    .map(|x| x.rating)
-                    .unwrap_or(default_rating)
-                    .mean()
-            })
-            .collect(),
-        teams[1]
-            .iter()
-            .map(|x| {
-                lobby
-                    .ratings()
-                    .get(x)
-                    .map(|x| x.rating)
-                    .unwrap_or(default_rating)
-                    .mean()
-            })
-            .collect(),
-    ];
-    let initial_ratings = database.get_initial_ratings()?;
-    let games = database
-        .get_games()?
-        .remove(&msg.channel_id)
-        .unwrap_or_default();
-    let ratings = Ratings::from_games(&games, &initial_ratings, trueskill);
-    lobby.set_ratings(ratings);
-    let new_ratings: [Vec<f64>; 2] = [
-        teams[0]
-            .iter()
-            .map(|x| {
-                lobby
-                    .ratings()
-                    .get(x)
-                    .map(|x| x.rating)
-                    .unwrap_or(default_rating)
-                    .mean()
-            })
-            .collect(),
-        teams[1]
-            .iter()
-            .map(|x| {
-                lobby
-                    .ratings()
-                    .get(x)
-                    .map(|x| x.rating)
-                    .unwrap_or(default_rating)
-                    .mean()
-            })
-            .collect(),
-    ];
-    let leaderboard = utils::leaderboard(lobby, 15, ranks, |user_id| {
-        checks::has_role(ctx, guild_id, user_id, roles.ranked)
-    })?;
-    if let Some((webhook_id, webhook_token, messages)) = lobby.webhook_mut() {
-        messages.par_iter().for_each(|&message| {
-            if let Err(err) = ctx.webhook_delete_message(*webhook_id, webhook_token, message) {
-                eprintln!("Err: {:?}", err);
+    let mut new_messages = Vec::new();
+    rayon::scope(|s| {
+        s.spawn(|_| {
+            if let Some((webhook_id, webhook_token, messages)) = webhook {
+                messages.par_iter().for_each(|&message| {
+                    if let Err(err) =
+                        ctx.delete_webhook_message(webhook_id, &webhook_token, message)
+                    {
+                        eprintln!("Err: {:?}", err);
+                    }
+                });
+                // messages.clear();
+                for (title, description) in leaderboard.iter() {
+                    let message = ctx.execute_webhook(webhook_id, &webhook_token, true, |m| {
+                        m.embed(|e| e.description(description).title(title))
+                    });
+                    let message = match message {
+                        Ok(message) => message,
+                        Err(err) => {
+                            eprintln!("Err: {:?}", err);
+                            continue;
+                        }
+                    };
+                    if let Some(message) = message {
+                        new_messages.push(message.id);
+                    }
+                }
             }
         });
-        messages.clear();
-        for (title, description) in leaderboard.iter() {
-            let message = ctx.execute_webhook(*webhook_id, webhook_token, true, |m| {
-                m.embed(|e| e.description(description).title(title))
-            });
-            let message = match message {
-                Ok(message) => message,
-                Err(err) => {
-                    eprintln!("Err: {:?}", err);
-                    continue;
-                }
-            };
-            if let Some(message) = message {
-                messages.push(message.id);
-            }
-        }
-    }
-    rayon::scope(|s| {
         s.spawn(|_| {
             if let Err(err) = (|| {
                 ctx.get_guild_roles(guild_id)?.par_iter().for_each(|role| {
                     if role
                         .name
-                        .contains(&format!("{} Game {}", lobby_name, game_id))
+                        .contains(&format!("{} Game {}", lobby_name, game.id()))
                     {
                         if let Err(err) = ctx.delete_guild_role(guild_id, role.id) {
                             eprintln!("Err: {:?}", err);
@@ -651,14 +681,19 @@ pub fn score(
             }
         });
         s.spawn(|_| {
-            game.teams()[0].par_iter().for_each(|&user_id| {
-                match checks::has_role(ctx, guild_id, user_id, roles.ranked) {
-                    Ok(false) => return,
-                    Err(err) => {
-                        eprintln!("Err: {:?}", err);
-                        return;
+            game.teams().into_par_iter().flatten().for_each(|&user_id| {
+                let user_roles = members_roles.get(&user_id).cloned().unwrap_or_default();
+                if !user_roles.contains(&roles.ranked) {
+                    for rank in ranks {
+                        if user_roles.contains(&rank.id) {
+                            if let Err(err) =
+                                ctx.remove_guild_member_role(guild_id, user_id, rank.id)
+                            {
+                                eprintln!("Err: {:?}", err);
+                            }
+                        }
                     }
-                    _ => (),
+                    return;
                 }
                 let rating = lobbies
                     .iter()
@@ -669,76 +704,21 @@ pub fn score(
                             .unwrap_or_default()
                     })
                     .fold(0f64, |acc, x| acc.max(x));
-                let rank_index = ranks
-                    .iter()
-                    .enumerate()
-                    .rev()
-                    .find(|(_, x)| rating >= x.limit)
-                    .map(|x| x.0 + 1)
-                    .unwrap_or_default()
-                    .min(ranks.len() - 1);
-                if let Err(err) = ctx.add_guild_member_role(guild_id, user_id, ranks[rank_index].id)
-                {
-                    eprintln!("Err: {:?}", err);
-                }
-                if rank_index > 0 && score != Score::Team2 {
-                    if let Err(err) =
-                        ctx.remove_guild_member_role(guild_id, user_id, ranks[rank_index - 1].id)
-                    {
-                        eprintln!("Err: {:?}", err);
+                let new_rank = utils::get_rank(ranks, rating);
+                for rank in ranks {
+                    if rank.id == new_rank.id {
+                        if !user_roles.contains(&rank.id) {
+                            if let Err(err) = ctx.add_guild_member_role(guild_id, user_id, rank.id)
+                            {
+                                eprintln!("Err: {:?}", err);
+                            }
+                        }
+                        continue;
                     }
-                }
-                if rank_index + 1 < ranks.len() && score != Score::Team1 {
-                    if let Err(err) =
-                        ctx.remove_guild_member_role(guild_id, user_id, ranks[rank_index + 1].id)
-                    {
-                        eprintln!("Err: {:?}", err);
-                    }
-                }
-            });
-        });
-        s.spawn(|_| {
-            game.teams()[1].par_iter().for_each(|&user_id| {
-                match checks::has_role(ctx, guild_id, user_id, roles.ranked) {
-                    Ok(false) => return,
-                    Err(err) => {
-                        eprintln!("Err: {:?}", err);
-                        return;
-                    }
-                    _ => (),
-                }
-                let rating = lobbies
-                    .iter()
-                    .map(|(_, x)| {
-                        x.ratings()
-                            .get(&user_id)
-                            .map(|y| y.rating.mean())
-                            .unwrap_or_default()
-                    })
-                    .fold(0f64, |acc, x| acc.max(x));
-                let rank_index = ranks
-                    .iter()
-                    .enumerate()
-                    .rev()
-                    .find(|(_, x)| rating >= x.limit)
-                    .map(|x| x.0 + 1)
-                    .unwrap_or_default();
-                if let Err(err) = ctx.add_guild_member_role(guild_id, user_id, ranks[rank_index].id)
-                {
-                    eprintln!("Err: {:?}", err);
-                }
-                if rank_index > 0 && score != Score::Team1 {
-                    if let Err(err) =
-                        ctx.remove_guild_member_role(guild_id, user_id, ranks[rank_index - 1].id)
-                    {
-                        eprintln!("Err: {:?}", err);
-                    }
-                }
-                if rank_index + 1 < ranks.len() && score != Score::Team2 {
-                    if let Err(err) =
-                        ctx.remove_guild_member_role(guild_id, user_id, ranks[rank_index + 1].id)
-                    {
-                        eprintln!("Err: {:?}", err);
+                    if user_roles.contains(&rank.id) {
+                        if let Err(err) = ctx.remove_guild_member_role(guild_id, user_id, rank.id) {
+                            eprintln!("Err: {:?}", err);
+                        }
                     }
                 }
             });
@@ -748,10 +728,14 @@ pub fn score(
                 users
                     .par_iter()
                     .zip(old_ratings.par_iter().zip(new_ratings.par_iter()))
-                    .map(|(x, (old, new))| {
+                    .map(|(user, (old, new))| {
                         let old_rank = utils::get_rank(ranks, *old);
                         let new_rank = utils::get_rank(ranks, *new);
-                        if let Ok(true) = checks::has_role(ctx, guild_id, *x, roles.ranked) {
+                        if members_roles
+                            .get(user)
+                            .map(|x| x.contains(&roles.ranked))
+                            .unwrap_or(false)
+                        {
                             let rank_update = if old_rank.id != new_rank.id {
                                 format!("{} => {}", old_rank.id.mention(), new_rank.id.mention())
                             } else {
@@ -760,7 +744,7 @@ pub fn score(
                             if new >= old {
                                 format!(
                                     "{} {:.0} + {:.0} = {:.0} {}",
-                                    x.mention(),
+                                    user.mention(),
                                     old,
                                     new - old,
                                     new,
@@ -769,7 +753,7 @@ pub fn score(
                             } else {
                                 format!(
                                     "{} {:.0} - {:.0} = {:.0} {}",
-                                    x.mention(),
+                                    user.mention(),
                                     old,
                                     old - new,
                                     new,
@@ -777,9 +761,9 @@ pub fn score(
                                 )
                             }
                         } else if new >= old {
-                            format!("{} +{:.0}", x.mention(), new - old,)
+                            format!("{} +{:.0}", user.mention(), new - old,)
                         } else {
-                            format!("{} -{:.0}", x.mention(), old - new,)
+                            format!("{} -{:.0}", user.mention(), old - new,)
                         }
                     })
                     .collect::<Vec<_>>()
@@ -788,19 +772,24 @@ pub fn score(
             let description = format!(
                 "**{}**\n\nTeam 1:\n{}\n\nTeam 2:\n{}",
                 score,
-                f(teams[0], &old_ratings[0], &new_ratings[0]),
-                f(teams[1], &old_ratings[1], &new_ratings[1])
+                f(game.teams()[0], &old_ratings[0], &new_ratings[0]),
+                f(game.teams()[1], &old_ratings[1], &new_ratings[1])
             );
-            if let Err(err) = ctx.send_message(msg.channel_id, |m| {
+            if let Err(err) = ctx.create_message(msg.channel_id, |m| {
                 m.embed(|e| {
                     e.description(description)
-                        .title(format!("Game {}", game_id))
+                        .title(format!("Game {}", game.id()))
                 })
             }) {
                 eprintln!("Err: {:?}", err);
             }
         });
     });
+    if let Some(lobby) = lobbies.get_mut(&msg.channel_id) {
+        if let Some(webhook) = lobby.webhook_mut() {
+            webhook.2 = new_messages;
+        }
+    }
     Ok(())
 }
 
@@ -841,7 +830,7 @@ pub fn cancel(
             }
         }
     });
-    ctx.send_message(msg.channel_id, |m| {
+    ctx.create_message(msg.channel_id, |m| {
         m.embed(|e| e.description(format!("Game {} cancelled.", game_id)))
     })?;
     Ok(())
@@ -884,7 +873,7 @@ pub fn undo(
         .unwrap_or_default();
     let ratings = Ratings::from_games(&games, &initial_ratings, trueskill);
     lobby.set_ratings(ratings);
-    ctx.send_message(msg.channel_id, |m| {
+    ctx.create_message(msg.channel_id, |m| {
         m.embed(|e| e.description(format!("Game {} undone.", game_id)))
     })?;
     if prev_score == Score::Cancelled || prev_score == Score::Undecided {
@@ -895,7 +884,7 @@ pub fn undo(
     })?;
     if let Some((webhook_id, webhook_token, messages)) = lobby.webhook_mut() {
         messages.par_iter().for_each(|&message| {
-            if let Err(err) = ctx.webhook_delete_message(*webhook_id, webhook_token, message) {
+            if let Err(err) = ctx.delete_webhook_message(*webhook_id, webhook_token, message) {
                 eprintln!("Err: {:?}", err);
             }
         });
@@ -930,7 +919,7 @@ pub fn gamelist(ctx: &Context, msg: &Message, lobbies: &Lobbies, database: &Data
         .map(|(id, game)| format!("Game {}: {}", id, game.score()))
         .collect::<Vec<_>>()
         .join("\n");
-    ctx.send_message(msg.channel_id, |m| m.embed(|e| e.description(description)))?;
+    ctx.create_message(msg.channel_id, |m| m.embed(|e| e.description(description)))?;
     Ok(())
 }
 
@@ -957,7 +946,7 @@ pub fn lastgame(ctx: &Context, msg: &Message, lobbies: &Lobbies, database: &Data
         f(game.teams()[0]),
         f(game.teams()[1])
     );
-    ctx.send_message(msg.channel_id, |m| {
+    ctx.create_message(msg.channel_id, |m| {
         m.embed(|e| {
             e.title(title)
                 .description(description)
@@ -1000,7 +989,7 @@ pub fn gameinfo(
         f(game.teams()[0]),
         f(game.teams()[1])
     );
-    ctx.send_message(msg.channel_id, |m| {
+    ctx.create_message(msg.channel_id, |m| {
         m.embed(|e| {
             e.title(title)
                 .description(description)
@@ -1019,7 +1008,7 @@ pub fn clear(ctx: &Context, msg: &Message, roles: &Roles, lobbies: &mut Lobbies)
         .get_mut(&msg.channel_id)
         .ok_or(Error::NotALobby(msg.channel_id))?;
     lobby.clear();
-    ctx.send_message(msg.channel_id, |m| {
+    ctx.create_message(msg.channel_id, |m| {
         m.embed(|e| e.description("Queue cleared"))
     })?;
     Ok(())
@@ -1088,7 +1077,7 @@ pub fn rebalance(
         f(game.teams()[0]),
         f(game.teams()[1])
     );
-    ctx.send_message(msg.channel_id, |m| {
+    ctx.create_message(msg.channel_id, |m| {
         m.embed(|e| {
             e.title(title)
                 .description(description)
@@ -1249,7 +1238,7 @@ pub fn swap(
         f(game.teams()[0]),
         f(game.teams()[1])
     );
-    ctx.send_message(msg.channel_id, |m| {
+    ctx.create_message(msg.channel_id, |m| {
         m.embed(|e| e.description(description).title(title))
     })?;
     Ok(())
@@ -1280,41 +1269,65 @@ pub fn setrating(
     };
     let rating = args[1].parse::<i64>()?;
     database.insert_initial_rating(member.user.id, rating as f64)?;
-    let mut games = database.get_games()?;
-    for (channel_id, lobby) in lobbies.iter_mut() {
-        let games = if let Some(games) = games.remove(channel_id) {
-            games
-        } else {
-            continue;
-        };
-        let initials = database.get_initial_ratings()?;
-        let ratings = Ratings::from_games(&games, &initials, trueskill);
-        lobby.set_ratings(ratings);
-
-        // Update all leaderboards
-        let leaderboard = utils::leaderboard(lobby, 15, ranks, |user_id| {
-            checks::has_role(ctx, guild_id, user_id, roles.ranked)
-        })?;
-        if let Some((webhook_id, webhook_token, messages)) = lobby.webhook_mut() {
-            messages.par_iter().for_each(|&message| {
-                if let Err(err) = ctx.webhook_delete_message(*webhook_id, webhook_token, message) {
-                    eprintln!("Err: {:?}", err);
+    let games = database.get_games()?;
+    let member_roles = ctx
+        .list_guild_members(guild_id)?
+        .into_iter()
+        .map(|x| (x.user.id, x.roles))
+        .collect::<HashMap<_, _>>();
+    let initials = database.get_initial_ratings()?;
+    rayon::scope(|s| {
+        s.spawn(|_| {
+            lobbies.par_iter_mut().for_each(|(channel_id, lobby)| {
+                let games = if let Some(games) = games.get(channel_id) {
+                    games
+                } else {
+                    return;
+                };
+                let ratings = Ratings::from_games(games, &initials, trueskill);
+                lobby.set_ratings(ratings);
+                let leaderboard = utils::leaderboard(lobby, 15, ranks, |user_id| {
+                    Ok(member_roles
+                        .get(&user_id)
+                        .map(|x| x.contains(&roles.ranked))
+                        .unwrap_or(false))
+                })
+                .unwrap();
+                if let Some((webhook_id, webhook_token, messages)) = lobby.webhook_mut() {
+                    messages.par_iter().for_each(|&message| {
+                        if let Err(err) =
+                            ctx.delete_webhook_message(*webhook_id, webhook_token, message)
+                        {
+                            eprintln!("Err: {:?}", err);
+                        }
+                    });
+                    messages.clear();
+                    for (title, description) in leaderboard.iter() {
+                        let message =
+                            match ctx.execute_webhook(*webhook_id, webhook_token, true, |m| {
+                                m.embed(|e| e.description(description).title(title))
+                            }) {
+                                Ok(message) => message,
+                                Err(err) => {
+                                    eprintln!("Err: {:?}", err);
+                                    continue;
+                                }
+                            };
+                        if let Some(message) = message {
+                            messages.push(message.id);
+                        }
+                    }
                 }
             });
-            messages.clear();
-            for (title, description) in leaderboard.iter() {
-                let message = ctx.execute_webhook(*webhook_id, webhook_token, true, |m| {
-                    m.embed(|e| e.description(description).title(title))
-                })?;
-                if let Some(message) = message {
-                    messages.push(message.id);
-                }
+        });
+        s.spawn(|_| {
+            if let Err(err) = ctx.create_message(msg.channel_id, |m| {
+                m.embed(|e| e.description(format!("Initial rating set to {}", rating)))
+            }) {
+                eprintln!("Err: {:?}", err);
             }
-        }
-    }
-    ctx.send_message(msg.channel_id, |m| {
-        m.embed(|e| e.description(format!("Initial rating set to {}", rating)))
-    })?;
+        });
+    });
     Ok(())
 }
 
@@ -1356,7 +1369,7 @@ pub fn expire(
         offset
     };
     *date_time = Utc::now() + Duration::minutes(offset);
-    ctx.send_message(msg.channel_id, |m| {
+    ctx.create_message(msg.channel_id, |m| {
         m.embed(|e| {
             e.description(format!(
                 "Your queue will expire in **{}h{}m**",

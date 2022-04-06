@@ -13,6 +13,7 @@ pub struct Config {
     pub database: String,
     pub timeout: Timeout,
     pub bridge: ChannelId,
+    pub game: Option<String>,
 }
 
 #[derive(Deserialize)]
