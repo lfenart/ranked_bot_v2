@@ -9,12 +9,12 @@ use rayon::iter::{
     IntoParallelRefMutIterator, ParallelIterator,
 };
 use serde_json::json;
-use trueskill::SimpleTrueSkill;
+use trueskill::SimpleTrueSkill as TrueSkill;
 
 use crate::bridge::{GameStarted, OpCode};
 use crate::checks;
 use crate::config::{Rank, Roles};
-use crate::model::{Database, Game, Lobbies, LobbyError, Ratings, Score};
+use crate::model::{Database, Game, Lobbies, LobbyError, QueueUser, Ratings, Score};
 use crate::utils;
 use crate::{Error, Result};
 
@@ -24,10 +24,11 @@ pub fn join(
     msg: &Message,
     roles: &Roles,
     lobbies: &mut Lobbies,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
     database: &Database,
     bridge: ChannelId,
     timeout: u64,
+    warn: u64,
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
     if checks::has_role(ctx, guild_id, msg.author.id, roles.banned)? {
@@ -40,6 +41,7 @@ pub fn join(
         bridge,
         msg.author.id,
         msg.timestamp + Duration::minutes(timeout as i64),
+        Some(msg.timestamp + Duration::minutes(warn as i64)),
         false,
         lobbies,
         trueskill,
@@ -53,10 +55,11 @@ pub fn forcejoin(
     msg: &Message,
     roles: &Roles,
     lobbies: &mut Lobbies,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
     database: &Database,
     bridge: ChannelId,
     timeout: u64,
+    warn: u64,
     args: &[String],
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
@@ -79,6 +82,7 @@ pub fn forcejoin(
             bridge,
             member.user.id,
             msg.timestamp + Duration::minutes(timeout as i64),
+            Some(msg.timestamp + Duration::minutes(warn as i64)),
             true,
             lobbies,
             trueskill,
@@ -96,15 +100,16 @@ fn join_internal(
     bridge: ChannelId,
     user_id: UserId,
     timestamp: DateTime<Utc>,
+    warn: Option<DateTime<Utc>>,
     force: bool,
     lobbies: &mut Lobbies,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
     database: &Database,
 ) -> Result {
     let lobby = lobbies
         .get_mut(&channel_id)
         .ok_or(Error::NotALobby(channel_id))?;
-    lobby.join(user_id, timestamp, force)?;
+    lobby.join(user_id, timestamp, warn, force)?;
     ctx.create_message(channel_id, |m| {
         m.embed(|e| {
             e.description(format!(
@@ -128,7 +133,7 @@ pub fn leave(
     ctx: &Context,
     msg: &Message,
     lobbies: &mut Lobbies,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
     database: &Database,
     bridge: ChannelId,
 ) -> Result {
@@ -152,7 +157,7 @@ pub fn forceleave(
     msg: &Message,
     roles: &Roles,
     lobbies: &mut Lobbies,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
     database: &Database,
     bridge: ChannelId,
     args: &[String],
@@ -194,7 +199,7 @@ fn leave_internal(
     user_id: UserId,
     force: bool,
     lobbies: &mut Lobbies,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
     database: &Database,
 ) -> Result {
     let players = {
@@ -232,7 +237,7 @@ pub fn players(
     msg: &Message,
     roles: &Roles,
     lobbies: &mut Lobbies,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
     database: &Database,
     bridge: ChannelId,
     args: &[String],
@@ -282,7 +287,7 @@ fn start_game(
     bridge: ChannelId,
     lobbies: &mut Lobbies,
     players: Vec<UserId>,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
     database: &Database,
 ) -> Result {
     let lobby_name = lobbies.get(&channel_id).unwrap().name().to_owned();
@@ -515,7 +520,7 @@ pub fn score(
     msg: &Message,
     roles: &Roles,
     lobbies: &mut Lobbies,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
     database: &Database,
     ranks: &[Rank],
     args: &[String],
@@ -843,7 +848,7 @@ pub fn undo(
     roles: &Roles,
     lobbies: &mut Lobbies,
     database: &Database,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
     ranks: &[Rank],
     args: &[String],
 ) -> Result {
@@ -1020,7 +1025,7 @@ pub fn rebalance(
     roles: &Roles,
     lobbies: &mut Lobbies,
     database: &Database,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
     if !checks::has_role(ctx, guild_id, msg.author.id, roles.admin)? {
@@ -1093,7 +1098,7 @@ pub fn swap(
     roles: &Roles,
     lobbies: &Lobbies,
     database: &Database,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
     args: &[String],
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
@@ -1250,7 +1255,7 @@ pub fn setrating(
     msg: &Message,
     roles: &Roles,
     lobbies: &mut Lobbies,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
     database: &Database,
     ranks: &[Rank],
     args: &[String],
@@ -1336,6 +1341,7 @@ pub fn expire(
     msg: &Message,
     lobbies: &mut Lobbies,
     timeout: u64,
+    warn: u64,
     args: &[String],
 ) -> Result {
     let lobby = if let Some(lobby) = lobbies.get_mut(&msg.channel_id) {
@@ -1343,8 +1349,8 @@ pub fn expire(
     } else {
         return Err(Error::NotALobby(msg.channel_id));
     };
-    let date_time = if let Some(date_time) = lobby.queue_mut().get_mut(&msg.author.id) {
-        date_time
+    let queue_user = if let Some(queue_user) = lobby.queue_mut().get_mut(&msg.author.id) {
+        queue_user
     } else {
         return Err(Error::Lobby(LobbyError::NotInQueue(msg.author.id)));
     };
@@ -1368,7 +1374,12 @@ pub fn expire(
     } else {
         offset
     };
-    *date_time = Utc::now() + Duration::minutes(offset);
+    let warn = if offset > (warn as i64) {
+        Some(Utc::now() + Duration::minutes(warn as i64))
+    } else {
+        None
+    };
+    *queue_user = QueueUser::new(Utc::now() + Duration::minutes(offset), warn);
     ctx.create_message(msg.channel_id, |m| {
         m.embed(|e| {
             e.description(format!(

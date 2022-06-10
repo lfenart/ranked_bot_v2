@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::ops::{Deref, DerefMut};
 
 use harmony::model::id::UserId;
-use trueskill::{self, Rating, SimpleTrueSkill};
+use trueskill::{self, Rating, SimpleTrueSkill as TrueSkill};
 
 use super::{Game, Score};
 
@@ -13,7 +13,7 @@ impl Ratings {
     pub fn from_games(
         games: &BTreeMap<usize, Game>,
         initial: &HashMap<UserId, f64>,
-        trueskill: SimpleTrueSkill,
+        trueskill: TrueSkill,
     ) -> Self {
         let mut ratings = HashMap::new();
         for (user_id, rating) in initial.iter() {

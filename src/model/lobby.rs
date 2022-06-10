@@ -49,7 +49,7 @@ impl DerefMut for Lobbies {
 
 #[derive(Debug, Clone)]
 pub struct Lobby {
-    queue: HashMap<UserId, DateTime<Utc>>,
+    queue: HashMap<UserId, QueueUser>,
     name: String,
     ratings: Ratings,
     webhook: Option<(WebhookId, String, Vec<MessageId>)>,
@@ -80,13 +80,18 @@ impl Lobby {
     pub fn join(
         &mut self,
         user_id: UserId,
-        timestamp: DateTime<Utc>,
+        expire: DateTime<Utc>,
+        warn: Option<DateTime<Utc>>,
         force: bool,
     ) -> Result<(), LobbyError> {
         if !force && self.frozen {
             return Err(LobbyError::Frozen);
         }
-        if self.queue.insert(user_id, timestamp).is_some() {
+        if self
+            .queue
+            .insert(user_id, QueueUser::new(expire, warn))
+            .is_some()
+        {
             return Err(LobbyError::AlreadyInQueue(user_id));
         }
         Ok(())
@@ -102,15 +107,15 @@ impl Lobby {
         Ok(())
     }
 
-    pub fn queue(&self) -> &HashMap<UserId, DateTime<Utc>> {
+    pub fn queue(&self) -> &HashMap<UserId, QueueUser> {
         &self.queue
     }
 
-    pub fn queue_mut(&mut self) -> &mut HashMap<UserId, DateTime<Utc>> {
+    pub fn queue_mut(&mut self) -> &mut HashMap<UserId, QueueUser> {
         &mut self.queue
     }
 
-    pub fn clear(&mut self) -> HashMap<UserId, DateTime<Utc>> {
+    pub fn clear(&mut self) -> HashMap<UserId, QueueUser> {
         mem::take(&mut self.queue)
     }
 
@@ -144,5 +149,25 @@ impl Lobby {
 
     pub fn set_ratings(&mut self, ratings: Ratings) {
         self.ratings = ratings;
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct QueueUser {
+    expire: DateTime<Utc>,
+    warn: Option<DateTime<Utc>>,
+}
+
+impl QueueUser {
+    pub fn new(expire: DateTime<Utc>, warn: Option<DateTime<Utc>>) -> Self {
+        Self { expire, warn }
+    }
+
+    pub fn expire(&self) -> DateTime<Utc> {
+        self.expire
+    }
+
+    pub fn warn(&self) -> Option<DateTime<Utc>> {
+        self.warn
     }
 }

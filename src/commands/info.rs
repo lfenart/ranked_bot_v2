@@ -4,7 +4,7 @@ use harmony::client::Context;
 use harmony::model::id::{ChannelId, UserId};
 use harmony::model::{Channel, Member, Message, User};
 use inline_python::python;
-use trueskill::{Rating, SimpleTrueSkill};
+use trueskill::{Rating, SimpleTrueSkill as TrueSkill};
 
 use crate::checks;
 use crate::config::{Rank, Roles};
@@ -106,7 +106,7 @@ pub fn history(
     ranks: &[Rank],
     lobbies: &Lobbies,
     database: &Database,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
     infos: &[ChannelId],
     args: &[String],
 ) -> Result {
@@ -150,7 +150,7 @@ pub fn forcehistory(
     ranks: &[Rank],
     lobbies: &Lobbies,
     database: &Database,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
     args: &[String],
 ) -> Result {
     let guild_id = checks::get_guild(msg)?;
@@ -198,7 +198,7 @@ fn history_internal(
     ranks: &[Rank],
     lobbies: &Lobbies,
     database: &Database,
-    trueskill: SimpleTrueSkill,
+    trueskill: TrueSkill,
     user: &User,
     channel_id: ChannelId,
     limit: Option<usize>,

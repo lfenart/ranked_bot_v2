@@ -20,12 +20,12 @@ use harmony::gateway::{Intents, Ready, Status};
 use harmony::model::id::{ChannelId, UserId};
 use harmony::model::{Activity, Message};
 use parking_lot::Mutex;
-use trueskill::SimpleTrueSkill;
+use trueskill::SimpleTrueSkill as TrueSkill;
 
 use bridge::BridgeEvent;
 use config::{Config, Rank, Roles, Timeout};
 pub use error::Error;
-use model::{Database, Lobbies, Lobby, Ratings};
+use model::{Database, Lobbies, Lobby, QueueUser, Ratings};
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
 
@@ -40,6 +40,7 @@ fn parse_command(msg: &str) -> Option<(String, Vec<String>)> {
 fn ready<T: ToString>(
     ctx: Context,
     ready: Ready,
+    prefix: String,
     lobbies: Arc<Mutex<Lobbies>>,
     game: Option<T>,
 ) -> UserId {
@@ -58,27 +59,49 @@ fn ready<T: ToString>(
                 let users = lobby
                     .queue()
                     .iter()
-                    .filter_map(|(&user_id, &date_time)| {
-                        if now >= date_time {
-                            Some(user_id)
+                    .filter_map(|(&user_id, queue_user)| {
+                        if now >= queue_user.expire() {
+                            Some((user_id, None))
+                        } else if let Some(warn) = queue_user.warn() {
+                            if now >= warn {
+                                Some((user_id, Some(queue_user.expire() - now)))
+                            } else {
+                                None
+                            }
                         } else {
                             None
                         }
                     })
                     .collect::<Vec<_>>();
-                for user_id in users {
-                    lobby.leave(user_id, true).ok();
-                    ctx.create_message(channel_id, |m| {
+                for (user_id, expire) in users {
+                    if let Some(expire) = expire {
+                        lobby
+                            .queue_mut()
+                            .entry(user_id)
+                            .and_modify(|e| *e = QueueUser::new(e.expire(), None));
+                        ctx.create_message(channel_id, |m| {
                         m.content(user_id.mention()).embed(|e| {
                             e.description(format!(
-                                "[{}/{}] {} left the queue (Timeout).",
-                                lobby.len(),
-                                lobby.capacity(),
-                                user_id.mention()
+                                "You will be removed from queue in {} minutes, use `{}expire` if you want to stay in the queue.",
+                                ((expire.num_seconds() as u64 + REFRESH_DELAY.as_secs() - 1) / REFRESH_DELAY.as_secs()) * REFRESH_DELAY.as_secs() / 60,
+                                prefix,
                             ))
                         })
-                    })
-                    .ok();
+                    }).ok();
+                    } else {
+                        lobby.leave(user_id, true).ok();
+                        ctx.create_message(channel_id, |m| {
+                            m.content(user_id.mention()).embed(|e| {
+                                e.description(format!(
+                                    "[{}/{}] {} left the queue (Timeout).",
+                                    lobby.len(),
+                                    lobby.capacity(),
+                                    user_id.mention()
+                                ))
+                            })
+                        })
+                        .ok();
+                    }
                 }
             }
         }
@@ -97,7 +120,7 @@ fn message_create(
     infos: &[ChannelId],
     lobbies: Arc<Mutex<Lobbies>>,
     bridge: ChannelId,
-    trueskill: &mut SimpleTrueSkill,
+    trueskill: &mut TrueSkill,
     database: &Database,
     timeout: Timeout,
 ) {
@@ -149,6 +172,7 @@ fn message_create(
                     database,
                     bridge,
                     timeout.default,
+                    timeout.warn,
                 ),
                 "forcejoin" | "forcej" | "forceadd" => commands::forcejoin(
                     &ctx,
@@ -159,6 +183,7 @@ fn message_create(
                     database,
                     bridge,
                     timeout.default,
+                    timeout.warn,
                     &args,
                 ),
                 "leave" | "l" => commands::leave(
@@ -272,9 +297,14 @@ fn message_create(
                     commands::leaderboard(&ctx, &msg, roles, &lobbies.lock(), ranks, &args)
                 }
                 "lball" => commands::lball(&ctx, &msg, roles, &lobbies.lock(), ranks, &args),
-                "expire" => {
-                    commands::expire(&ctx, &msg, &mut lobbies.lock(), timeout.maximum, &args)
-                }
+                "expire" => commands::expire(
+                    &ctx,
+                    &msg,
+                    &mut lobbies.lock(),
+                    timeout.maximum,
+                    timeout.warn,
+                    &args,
+                ),
                 _ => return,
             };
             if let Err(err) = result {
@@ -328,7 +358,9 @@ fn main() {
     let client = ClientBuilder::new()
         .with_bot_token(&token)
         .intents(Intents::GUILD_MESSAGES | Intents::DIRECT_MESSAGES)
-        .on_ready(|ctx, rdy| *bot_user_id.lock() = ready(ctx, rdy, lobbies.clone(), game.as_ref()))
+        .on_ready(|ctx, rdy| {
+            *bot_user_id.lock() = ready(ctx, rdy, prefix.clone(), lobbies.clone(), game.as_ref())
+        })
         .on_message_create(|ctx, msg| {
             message_create(
                 ctx,

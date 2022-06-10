@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use rand::Rng;
-use trueskill::{Rating, SimpleTrueSkill};
+use trueskill::{Rating, SimpleTrueSkill as TrueSkill};
 
 fn balance_internal(players: &[f64]) -> u64 {
     let goal = players.iter().sum::<f64>() / 2.0 - players[0];
@@ -49,7 +49,7 @@ pub fn balance<T: Copy>(players: &[(T, Rating)]) -> [Vec<(T, Rating)>; 2] {
     teams
 }
 
-pub fn quality<T: Copy>(teams: &[Vec<(T, Rating)>; 2], trueskill: SimpleTrueSkill) -> f64 {
+pub fn quality<T: Copy>(teams: &[Vec<(T, Rating)>; 2], trueskill: TrueSkill) -> f64 {
     trueskill.quality(
         &teams[0].iter().map(|x| x.1).collect::<Vec<_>>(),
         &teams[1].iter().map(|x| x.1).collect::<Vec<_>>(),

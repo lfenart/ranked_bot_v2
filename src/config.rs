@@ -1,11 +1,11 @@
 use harmony::model::id::{ChannelId, RoleId, WebhookId};
 use serde::Deserialize;
-use trueskill::SimpleTrueSkill;
+use trueskill::SimpleTrueSkill as TrueSkill;
 
 #[derive(Deserialize)]
 pub struct Config {
     pub prefix: String,
-    pub trueskill: SimpleTrueSkill,
+    pub trueskill: TrueSkill,
     pub lobbies: Vec<Lobby>,
     pub infos: Vec<ChannelId>,
     pub roles: Roles,
@@ -20,6 +20,8 @@ pub struct Config {
 pub struct Lobby {
     pub channel: ChannelId,
     pub name: String,
+    #[serde(default)]
+    pub aliases: Vec<String>,
     pub webhook: Option<Webhook>,
     pub capacity: usize,
 }
@@ -49,4 +51,5 @@ pub struct Webhook {
 pub struct Timeout {
     pub default: u64,
     pub maximum: u64,
+    pub warn: u64,
 }

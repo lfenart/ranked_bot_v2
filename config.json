@@ -1,5 +1,5 @@
 {
-    "prefix": "!",
+    "prefix": "?",
     "trueskill": {
         "mu": 4000,
         "sigma": 1000,
@@ -37,7 +37,8 @@
     "database": "./db.db",
     "timeout": {
         "default": 90,
-        "maximum": 180
+        "maximum": 180,
+        "warn": 10
     },
     "ranks": [
         {
@@ -71,6 +72,6 @@
             "color": "red"
         }
     ],
-    "bridge": 0,
+    "bridge": 940517919304060928,
     "game": "Star Wars: Battlefront 2 (Classic, 2005)"
 }
