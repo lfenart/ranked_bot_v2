@@ -34,14 +34,15 @@ pub fn join(
     if checks::has_role(ctx, guild_id, msg.author.id, roles.banned)? {
         return Ok(());
     }
+    let timestamp = msg.timestamp + Duration::minutes(timeout as i64);
     join_internal(
         ctx,
         guild_id,
         msg.channel_id,
         bridge,
         msg.author.id,
-        msg.timestamp + Duration::minutes(timeout as i64),
-        Some(msg.timestamp + Duration::minutes(warn as i64)),
+        timestamp,
+        Some(timestamp - Duration::minutes(warn as i64)),
         false,
         lobbies,
         trueskill,
@@ -66,6 +67,7 @@ pub fn forcejoin(
     if !checks::has_role(ctx, guild_id, msg.author.id, roles.admin)? {
         return Ok(());
     }
+    let timestamp = msg.timestamp + Duration::minutes(timeout as i64);
     let members = args
         .iter()
         .map(|arg| match Member::parse(ctx, guild_id, arg) {
@@ -81,8 +83,8 @@ pub fn forcejoin(
             msg.channel_id,
             bridge,
             member.user.id,
-            msg.timestamp + Duration::minutes(timeout as i64),
-            Some(msg.timestamp + Duration::minutes(warn as i64)),
+            timestamp,
+            Some(timestamp - Duration::minutes(warn as i64)),
             true,
             lobbies,
             trueskill,
@@ -1374,12 +1376,13 @@ pub fn expire(
     } else {
         offset
     };
+    let expire = Utc::now() + Duration::minutes(offset);
     let warn = if offset > (warn as i64) {
-        Some(Utc::now() + Duration::minutes(warn as i64))
+        Some(expire - Duration::minutes(warn as i64))
     } else {
         None
     };
-    *queue_user = QueueUser::new(Utc::now() + Duration::minutes(offset), warn);
+    *queue_user = QueueUser::new(expire, warn);
     ctx.create_message(msg.channel_id, |m| {
         m.embed(|e| {
             e.description(format!(
